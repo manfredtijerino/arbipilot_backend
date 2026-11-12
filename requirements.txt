@@ -1,0 +1,23 @@
+# ArbiPilot backend - every library, one list.
+# Install with: pip install -r requirements.txt
+# Versions pinned 2026-11-12 (latest releases, installed and checked on Python 3.13.7).
+
+# The app
+fastapi==0.162.5
+uvicorn[standard]==0.54.0
+sqlalchemy[asyncio]==2.1.8
+asyncpg==0.32.0
+alembic==1.20.1
+httpx==0.28.1
+websockets==17.4
+anthropic==2.8.0
+python-telegram-bot==22.8
+pydantic-settings==2.16.2
+pyyaml==6.0.3
+pyjwt==2.15.1
+argon2-cffi==25.1.0
+
+# Testing and code checks
+pytest==9.2.0
+pytest-asyncio==1.5.0
+ruff==0.17.4
