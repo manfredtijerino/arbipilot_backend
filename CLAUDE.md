@@ -12,6 +12,7 @@ Read these when a task touches their topic. Do not guess what they say.
 - The context/decisions file — decisions 1–27.
 - `docs/day0-recap.md` — provider status, key names, IPs, fees, `decisions.yaml` values.
 - `docs/project-brief.md` — environments, stack, folder layout, endpoints, build plan, open questions.
+- `docs/build-roadmap.md` — the stages in order, each with a gate. Never start a stage before the owner approves the previous gate.
 - `docs/claude-code-setup.md` — how this `.claude/` folder is built and maintained.
 - `docs/api.md` — the endpoint table. `docs/owner-actions.md` — what the owner still has to do.
 - The latest `docs/session-N-recap.md` — where the previous session stopped.
@@ -117,8 +118,10 @@ Never bury a manual step inside a long answer. Never assume he did it: verify, t
 - Run `/preflight` before every commit. Never commit on red.
 - Branches: `main` is the stable version. Every feature gets its own branch, `feature/<name>`, made from an up-to-date `main`, and is merged back only after its checks pass. There is no `dev` branch.
 - The owner makes most commits and every push by hand, following `README.md` §2. When work is ready, tell him which files to add and suggest the commit message. Commit yourself only when he asks; never push.
+- The owner decides when `main` is updated, and merges through a pull request in GitHub's web page (decided 2026-11-23). Do not suggest local `git merge` commands. `main` must be up to date before any `/deploy`.
 - When you do commit, run `git add` and `git commit` as two separate commands; the secret hook cannot scan files staged in the same command.
 - End every session with `/session-recap`.
+- Lesson (2026-11-16): HTTP libraries log full request addresses at INFO, and Telegram's address contains the bot token. `config/logging.py` quietens them and hides secrets in every line; call `setup_logging()` before any network call, and pipe a first run of new network code through a mask before showing its output.
 - When you learn a project-specific lesson, add one line here. Remove rules that no longer apply. Keep this file under 200 lines.
 
 ## Talking to the owner

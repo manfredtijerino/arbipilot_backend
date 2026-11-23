@@ -1,0 +1,177 @@
+{
+  "info": {
+    "_postman_id": "0b6f6f0e-6f1c-4f58-9f5e-a7b1c0de0001",
+    "name": "ArbiPilot",
+    "description": "Every endpoint of the ArbiPilot backend, one folder per group, in the same order as docs/api.md. Choose the Development or Production environment (top right) before sending. No token, password or key is saved in this file.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "description": "No login needed.",
+      "item": [
+        {
+          "name": "Health - is the app alive?",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Says which environment and mode', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql('ok');",
+                  "    pm.expect(body.environment).to.be.oneOf(['development', 'production']);",
+                  "    pm.expect(body.trading_mode).to.be.oneOf(['shadow', 'testnet', 'live']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Returns the environment, the trading mode and the version. Always 200 while the app runs."
+          },
+          "response": [
+            {
+              "name": "200 - alive",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/health",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "health"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"ok\",\n  \"environment\": \"development\",\n  \"trading_mode\": \"shadow\",\n  \"version\": \"0.1.0\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Ready - is everything connected?",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 (everything is connected)', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Lists the four checks', function () {",
+                  "    const checks = pm.response.json().checks;",
+                  "    pm.expect(checks).to.have.all.keys('database', 'binance', 'claude', 'telegram');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/ready",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health",
+                "ready"
+              ]
+            },
+            "description": "200 when the database, Binance, the Claude API and Telegram all answer. 503 when any one fails; the body then says which one and why. The answer is reused for 15 seconds."
+          },
+          "response": [
+            {
+              "name": "200 - everything connected",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/health/ready",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "health",
+                    "ready"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"ok\",\n  \"environment\": \"development\",\n  \"checks\": {\n    \"database\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    },\n    \"binance\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    },\n    \"claude\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    },\n    \"telegram\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    }\n  }\n}"
+            },
+            {
+              "name": "503 - the database is unreachable",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/health/ready",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "health",
+                    "ready"
+                  ]
+                }
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"failed\",\n  \"environment\": \"development\",\n  \"checks\": {\n    \"database\": {\n      \"status\": \"failed\",\n      \"detail\": \"could not reach the managed database (host unreachable)\"\n    },\n    \"binance\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    },\n    \"claude\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    },\n    \"telegram\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    }\n  }\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -32,15 +32,23 @@ SPECIFIC = [
 NAME = r"[A-Za-z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)[A-Za-z0-9_]*"
 QUOTED = re.compile(rf"(?i)\b{NAME}[\"']?\s*[=:]\s*[\"'][A-Za-z0-9_\-:/+]{{24,}}[\"']")
 UNQUOTED = re.compile(rf"(?i)\b{NAME}\s*[=:]\s*[A-Za-z0-9_\-:/+]{{24,}}")
+# `git add` or `git stage`, also behind options such as `git -C . add`.
+STAGES_FILES = re.compile(r"\bgit\s+(?:-\S+(?:\s+\S+)?\s+)*(?:add|stage)\b")
 POSTMAN_ENV = re.compile(r"(^|/)postman/.*environment.*\.json$")
 POSTMAN_VALUE = re.compile(r"\"value\"\s*:\s*\"(?!https?://|\{\{)[^\"]{16,}\"")
+
+
+class GitFailed(Exception):
+    """A git command the scan depends on did not work."""
 
 
 def git(args: list[str], cwd: str) -> str:
     result = subprocess.run(
         ["git", *args], cwd=cwd, capture_output=True, text=True, check=False
     )
-    return result.stdout if result.returncode == 0 else ""
+    if result.returncode != 0:
+        raise GitFailed(" ".join(args))
+    return result.stdout
 
 
 def scan(diff: str) -> list[str]:
@@ -83,7 +91,7 @@ def main() -> int:
 
     # The hook runs before the whole command. If the same command also stages
     # files, nothing is staged yet and the scan below would see nothing.
-    if re.search(r"\bgit\s+(add|stage)\b", command):
+    if STAGES_FILES.search(command):
         print(
             "Commit blocked: this command stages and commits together, "
             "so the secret check cannot see the files.",
@@ -96,13 +104,21 @@ def main() -> int:
         return 2
 
     cwd = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-    include_unstaged = bool(re.search(r"\s(-[A-Za-z]*a[A-Za-z]*|--all)\b", command))
-
-    names = git(["diff", "--cached", "--name-only"], cwd).splitlines()
-    diff = git(["diff", "--cached", "-U0"], cwd)
-    if include_unstaged:
+    # Scan staged and unstaged changes alike: `git commit -a` and
+    # `git commit <file>` both commit changes that were never staged.
+    try:
+        names = git(["diff", "--cached", "--name-only"], cwd).splitlines()
+        diff = git(["diff", "--cached", "-U0"], cwd)
         names += git(["diff", "--name-only"], cwd).splitlines()
         diff += "\n" + git(["diff", "-U0"], cwd)
+    except GitFailed as failed:
+        # If the changes cannot be read, they cannot be checked: block.
+        print(
+            f"Commit blocked: the secret check could not read the changes "
+            f"(git {failed} failed).",
+            file=sys.stderr,
+        )
+        return 2
 
     problems = [
         f"{n}: secret files are never committed"
@@ -118,11 +134,13 @@ def main() -> int:
     for problem in unique[:10]:
         print(f"  - {problem}", file=sys.stderr)
     print(
-        "Remove it (git restore --staged <file>, or delete the value), then commit again.",
+        "Remove it (git restore --staged <file>, or delete the value), "
+        "then commit again.",
         file=sys.stderr,
     )
     print(
-        "Do not bypass this hook. If a real key was exposed, tell the owner to rotate it.",
+        "Do not bypass this hook. If a real key was exposed, "
+        "tell the owner to rotate it.",
         file=sys.stderr,
     )
     return 2
