@@ -40,8 +40,8 @@ From `docs/project-brief.md` §2. Each objective has a stage where it is built a
 
 | Stage | Name | Endpoints | Status |
 |---|---|---|---|
-| 1 | Foundation and connections | 2 | Built 2026-11-20. Gate open: owner's Postman test and approval |
-| 2 | Tables and migrations | 0 | Not started |
+| 1 | Foundation and connections | 2 | **Passed 2026-11-23.** Owner started the app, ran both requests in Postman (200), approved. Commit `215c7b8` on `feature/foundation` |
+| 2 | Tables and migrations | 0 | **Passed 2026-11-24.** Migrations `0001` and `0002` on `arbipilot_dev` and `arbipilot_test`; owner checked the tables in pgAdmin and approved |
 | 3 | Login and users | 9 | Not started |
 | 4 | Connection checks | 7 | Not started |
 | 5 | Market data | 3 | Not started |
@@ -75,8 +75,8 @@ Claude Code updates this table when a gate is passed, with the date.
 - **Goal:** tables are created and changed only by versioned scripts (migrations), the same way in all three databases.
 - **Why:** Because a table changed by hand in one database and not another is the classic cause of "works on my laptop, breaks in production".
 - **Example:** adding a `last_login_at` column is one migration file. It runs on `arbipilot_dev` today and on `arbipilot_prod` at the next deploy, giving identical tables.
-- **Built:** Alembic setup, the first tables (users, refresh tokens, reset codes), the integration-test setup that refuses any database whose name does not end in `_test`.
-- **Gate:** `alembic upgrade head` succeeds on `arbipilot_dev`; the owner sees the tables in pgAdmin; integration tests pass on `arbipilot_test`. Also proves that the read-only user can read but not change (checked on `arbipilot_dev` first, on production at stage 12).
+- **Built:** Alembic setup, the first tables (users, refresh tokens, reset codes), the integration-test setup that refuses any database whose name does not end in `_test`. The database itself enforces: one owner row only, emails in lowercase, one unused reset code per user. Migrations refuse an unknown option, check the name of the database they reached, and refuse a downgrade in production.
+- **Gate:** `alembic upgrade head` succeeds on `arbipilot_dev`; the owner sees the tables in pgAdmin; integration tests pass on `arbipilot_test`. Also proves from the app's side that the development user is refused by `arbipilot_prod`. (The read-only user can only enter `arbipilot_prod`, so its rights are proven at stage 12, when production has tables.)
 
 ### Stage 3: Login and users
 
@@ -86,6 +86,13 @@ Claude Code updates this table when a gate is passed, with the date.
 - **Built (tests written first):** one owner account, passwords hashed with Argon2, a 30-minute access token and a 7-day refresh token, a reset code sent by Telegram (10 minutes, usable once), a lock after five wrong passwords.
 - **Endpoints:** `POST /auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/password/forgot`, `/auth/password/reset`, `/auth/password/change`, `GET /users/me`, `PATCH /users/me`.
 - **Gate:** the owner registers, logs in, receives a reset code in Telegram and sets a new password, all from Postman; a second registration is refused; a request without a token is refused.
+- **Carried over from the stage 2 security review (must be handled here):**
+  - Never log or return the database's own error text: a "duplicate" error contains the email or token hash.
+  - Hash the reset code with Argon2 or a keyed hash; a plain hash of six digits can be reversed in under a second.
+  - Count wrong passwords and wrong codes inside one SQL statement (`SET x = x + 1`), so parallel guesses cannot beat the limit.
+  - Cancel the old reset code before issuing a new one, and limit how often a code can be requested.
+  - A token issued in the same second as a password change must still work: compare times at whole-second precision.
+  - A lock after five wrong passwords lets a stranger who knows the email keep the owner out. Prefer growing delays, and keep the Telegram reset working during a lock.
 
 ### Stage 4: Connection checks
 

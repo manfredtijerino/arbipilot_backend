@@ -1,4 +1,8 @@
-"""Shared test helpers. Tests never read the real `.env`."""
+"""Shared test helpers. Unit tests never read the real `.env`.
+
+Only the integration tests do (see `tests/database/conftest.py`), and only to
+reach the `arbipilot_test` database.
+"""
 
 from collections.abc import Callable
 from typing import Any

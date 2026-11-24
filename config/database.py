@@ -10,7 +10,13 @@ import logging
 
 import asyncpg
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool
 
 from config.settings import Settings
 
@@ -27,17 +33,49 @@ class DatabaseCheckError(Exception):
     """The database check failed. The message is safe to show the owner."""
 
 
-def create_engine(settings: Settings) -> AsyncEngine:
-    """Build the engine. Nothing connects until the first query."""
+def create_engine(
+    settings: Settings, database: str | None = None, pooled: bool = True
+) -> AsyncEngine:
+    """Build the engine. Nothing connects until the first query.
+
+    `database` is this machine's own database unless the test database is
+    named (see `Settings.database_url`). Migrations and tests pass
+    `pooled=False`: they connect once and must leave nothing open.
+    """
+    options: dict = {"pool_pre_ping": True} if pooled else {"poolclass": NullPool}
     return create_async_engine(
-        settings.database_url(),
-        pool_pre_ping=True,  # replace a connection the server has dropped
+        settings.database_url(database),
         hide_parameters=True,  # errors never show the values sent with a query
         connect_args={
             "ssl": settings.postgres_sslmode,  # TLS always: require or stricter
             "timeout": CONNECT_TIMEOUT_SECONDS,
         },
+        **options,
     )
+
+
+def name_of_test_database(settings: Settings) -> str:
+    """The database integration tests and test migrations may wipe.
+
+    Refuses anything that is not clearly a test database. The development and
+    test databases share one user, so this check, not the password, is what
+    stops a test from wiping development data.
+    """
+    name = settings.postgres_test_db
+    if settings.is_production:
+        raise DatabaseCheckError("the test database is never used in production")
+    if not name.lower().endswith("_test"):
+        raise DatabaseCheckError("POSTGRES_TEST_DB must be a database ending in _test")
+    return name
+
+
+def session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Makes sessions: one short conversation with the database each.
+
+    `expire_on_commit=False` keeps a saved row readable after the commit
+    without another round trip to Tokyo.
+    """
+    return async_sessionmaker(engine, expire_on_commit=False)
 
 
 def get_engine(settings: Settings) -> AsyncEngine:
@@ -72,7 +110,9 @@ def _error_chain(exc: BaseException) -> list[BaseException]:
     return chain
 
 
-def describe_failure(exc: BaseException, settings: Settings) -> str:
+def describe_failure(
+    exc: BaseException, settings: Settings, database: str | None = None
+) -> str:
     """A plain reason for a failed connection, written by us.
 
     The driver's own text is never passed on, so nothing from the connection
@@ -88,7 +128,7 @@ def describe_failure(exc: BaseException, settings: Settings) -> str:
     ):
         return "the database refused the user name or password"
     if has(asyncpg.InvalidCatalogNameError):
-        return f"the database {settings.postgres_db} does not exist"
+        return f"the database {database or settings.postgres_db} does not exist"
     if has(TimeoutError):
         return "could not reach the managed database (timed out)"
     if has(OSError):

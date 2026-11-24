@@ -138,3 +138,62 @@ def test_each_failure_gets_a_plain_reason(
 def test_reason_is_found_inside_a_wrapped_error(db_settings: Settings) -> None:
     wrapped = DBAPIError("SELECT 1", None, asyncpg.InvalidPasswordError("x"))
     assert "refused" in describe_failure(wrapped, db_settings)
+
+
+# --- Which database may be named (stage 2) ---
+
+
+def test_url_can_point_at_the_test_database(db_settings: Settings) -> None:
+    assert db_settings.database_url("arbipilot_test").database == "arbipilot_test"
+
+
+@pytest.mark.parametrize("name", ["arbipilot_prod", "postgres", "dbmaster"])
+def test_url_refuses_any_other_database(db_settings: Settings, name: str) -> None:
+    with pytest.raises(ValueError, match="POSTGRES_DB or POSTGRES_TEST_DB"):
+        db_settings.database_url(name)
+
+
+def test_engine_for_migrations_keeps_no_connection_open(
+    db_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict = {}
+
+    def fake_create(url: object, **kwargs: object) -> str:
+        seen.update(kwargs, url=url)
+        return "engine"
+
+    monkeypatch.setattr(database, "create_async_engine", fake_create)
+    database.create_engine(db_settings, database="arbipilot_test", pooled=False)
+    assert seen["poolclass"] is database.NullPool
+    assert seen["url"].database == "arbipilot_test"
+    assert seen["connect_args"]["ssl"] == "require"
+    assert seen["hide_parameters"] is True
+
+
+def test_test_database_name_is_given_when_it_ends_in_test(
+    db_settings: Settings,
+) -> None:
+    assert database.name_of_test_database(db_settings) == "arbipilot_test"
+
+
+def test_test_database_name_refuses_an_empty_name(
+    make_settings: Callable[..., Settings],
+) -> None:
+    settings = make_settings(postgres_test_db="")
+    with pytest.raises(DatabaseCheckError, match="ending in _test"):
+        database.name_of_test_database(settings)
+
+
+def test_test_database_name_refuses_a_name_not_ending_in_test(
+    db_settings: Settings,
+) -> None:
+    # The guard rails stop this at startup; this check must hold on its own too.
+    settings = db_settings.model_copy(update={"postgres_test_db": "arbipilot_dev"})
+    with pytest.raises(DatabaseCheckError, match="ending in _test"):
+        database.name_of_test_database(settings)
+
+
+def test_test_database_is_never_used_in_production(db_settings: Settings) -> None:
+    settings = db_settings.model_copy(update={"app_env": "production"})
+    with pytest.raises(DatabaseCheckError, match="never used in production"):
+        database.name_of_test_database(settings)

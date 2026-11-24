@@ -49,6 +49,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="forbid",  # a misspelled key in .env stops the app
         hide_input_in_errors=True,  # validation errors never echo a value
+        frozen=True,  # nothing can change a setting after the guard rails ran
     )
 
     # --- The app ---
@@ -173,19 +174,26 @@ class Settings(BaseSettings):
             )
         )
 
-    def database_url(self) -> URL:
+    def database_url(self, database: str | None = None) -> URL:
         """The connection address, built from the separate `.env` values.
+
+        `database` may only be this machine's own database (the default) or
+        its test database. Any other name is refused, so no code path can
+        build an address for a database this machine must not touch.
 
         Never log or print it with the password: `str(url)` and `repr(url)`
         show `***` in its place, and that is the only form allowed in output.
         """
+        database = database or self.postgres_db
+        if database not in {self.postgres_db, self.postgres_test_db} or not database:
+            raise ValueError("only POSTGRES_DB or POSTGRES_TEST_DB may be connected to")
         return URL.create(
             drivername="postgresql+asyncpg",
             username=self.postgres_user,
             password=self.postgres_password.get_secret_value(),
             host=self.postgres_host,
             port=self.postgres_port,
-            database=self.postgres_db,
+            database=database,
         )
 
 

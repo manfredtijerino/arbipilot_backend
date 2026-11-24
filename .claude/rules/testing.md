@@ -13,5 +13,6 @@ paths:
 - Assert money with exact `Decimal` equality, never approximate floats.
 - Each risk rule has a test for the allowed case, the blocked case and the exact boundary.
 - Each endpoint has a test in `tests/api/` for success, no token and one bad input.
+- Never run pytest with `--showlocals` (`-l`): on a database connection error it prints the driver's local variables, which include the password.
 - Tests must pass before any commit.
 - A failing test is fixed or the change is reverted. Never delete, skip or weaken a test to get green without the owner's approval.

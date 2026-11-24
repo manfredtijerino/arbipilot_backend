@@ -45,7 +45,7 @@ If two files disagree and `docs/project-brief.md` §0 does not settle it, stop a
 | Unit tests | `pytest` |
 | Integration tests (use `arbipilot_test`) | `pytest -m integration` |
 | Lint / format | `ruff check .` · `ruff format .` |
-| New migration | `alembic revision --autogenerate -m "<message>"` |
+| New migration | `alembic revision --autogenerate --rev-id <next number> -m "<message>"` |
 | Apply migrations (development) | `alembic upgrade head` |
 | Release to production | `/deploy` |
 
@@ -122,6 +122,7 @@ Never bury a manual step inside a long answer. Never assume he did it: verify, t
 - When you do commit, run `git add` and `git commit` as two separate commands; the secret hook cannot scan files staged in the same command.
 - End every session with `/session-recap`.
 - Lesson (2026-11-16): HTTP libraries log full request addresses at INFO, and Telegram's address contains the bot token. `config/logging.py` quietens them and hides secrets in every line; call `setup_logging()` before any network call, and pipe a first run of new network code through a mask before showing its output.
+- Lesson (2026-11-23): in `database/migrations/env.py`, any query run before Alembic starts opens a transaction; without `connection.commit()` after it, the migration reports success and is thrown away. The integration test "database is at the latest migration" catches this.
 - When you learn a project-specific lesson, add one line here. Remove rules that no longer apply. Keep this file under 200 lines.
 
 ## Talking to the owner
