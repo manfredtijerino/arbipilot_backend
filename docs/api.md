@@ -3,7 +3,7 @@
 The endpoint table. It is the contract with the future frontend, so it is kept in step with the code: a row says **Built** only when the endpoint exists, has its tests and has its Postman request.
 
 - Every path starts with `/api/v1`. Development: `http://localhost:3000/api/v1`. Production (through the SSH tunnel): `http://localhost:3001/api/v1`.
-- Every endpoint needs login (`Authorization: Bearer <access token>`) except the two health endpoints.
+- Every endpoint needs login (`Authorization: Bearer <access token>`) except the two health endpoints and the five `/auth` endpoints that exist to get a token: register, login, refresh, forgot password and reset password.
 - Errors always look like this: `{"error": {"code": "not_found", "message": "This address does not exist."}}`.
 - Money is a string, never a number. Times are ISO 8601 in UTC.
 
@@ -59,15 +59,109 @@ What each check does: `database` runs `SELECT 1` over TLS; `binance` reads Binan
 
 | Method | Path | Login | Dev only | What it does | Status |
 |---|---|---|---|---|---|
-| POST | `/auth/register` | No (closed once the owner exists) | No | Creates the owner account (email and password). | Planned |
-| POST | `/auth/login` | No | No | Checks email and password; returns an access token and a refresh token. | Planned |
-| POST | `/auth/refresh` | Refresh token | No | Swaps a refresh token for a new access token. | Planned |
-| POST | `/auth/logout` | Yes | No | Cancels the refresh token. | Planned |
-| POST | `/auth/password/forgot` | No | No | Sends a one-time reset code to the owner's Telegram. | Planned |
-| POST | `/auth/password/reset` | Reset code | No | Sets a new password using the reset code. | Planned |
-| POST | `/auth/password/change` | Yes | No | Changes the password while logged in. | Planned |
-| GET | `/users/me` | Yes | No | Returns the logged-in user's profile. | Planned |
-| PATCH | `/users/me` | Yes | No | Updates the profile. | Planned |
+| POST | `/auth/register` | No (closed once the owner exists) | No | Creates the owner account (email and password). | **Built** |
+| POST | `/auth/login` | No | No | Checks email and password; returns an access token and a refresh token. | **Built** |
+| POST | `/auth/refresh` | Refresh token | No | Swaps a refresh token for a new pair of tokens. | **Built** |
+| POST | `/auth/logout` | Yes | No | Cancels the refresh token. | **Built** |
+| POST | `/auth/password/forgot` | No | No | Sends a one-time reset code to the owner's Telegram. | **Built** |
+| POST | `/auth/password/reset` | Reset code | No | Sets a new password using the reset code. | **Built** |
+| POST | `/auth/password/change` | Yes | No | Changes the password while logged in. | **Built** |
+| GET | `/users/me` | Yes | No | Returns the logged-in user's profile. | **Built** |
+| PATCH | `/users/me` | Yes | No | Updates the display name. | **Built** |
+
+### How login works
+
+1. `POST /auth/login` returns two tokens.
+2. Send the **access token** with every other request: `Authorization: Bearer <access token>`. It works for 30 minutes.
+3. When it expires, send the **refresh token** to `POST /auth/refresh` to get a new pair. A refresh token works for 7 days and only once.
+4. Without a valid access token, every endpoint outside the "Login: No" rows answers `401 not_authenticated`.
+
+Request bodies refuse unknown fields (`422`). A `422` names the fields that are wrong and never repeats what was sent.
+
+| Error code | Status | When |
+|---|---|---|
+| `not_authenticated` | 401 | The access token is missing, wrong, expired, or older than the last password change. |
+| `invalid_credentials` | 401 | Wrong email or password. An unknown email gets the same answer and the same waits. |
+| `too_many_attempts` | 429 | Waiting after wrong passwords: 1 s, 2 s, 4 s ... up to 15 minutes. The `Retry-After` header gives the seconds left. A correct login or a password reset clears it. |
+| `invalid_refresh_token` | 401 | The refresh token is unknown, used, cancelled or expired. |
+| `registration_closed` | 409 | The owner account already exists. |
+| `invalid_reset_code` | 400 | The reset code is wrong, used or expired, or the email is unknown. |
+| `invalid_input` | 422 | A field is missing or has the wrong shape. |
+
+### `POST /auth/register`
+
+Works once. `201` with the profile; `409 registration_closed` afterwards.
+
+```json
+{"email": "you@example.com", "password": "at least 12 characters", "display_name": "Manfred"}
+```
+
+| Field | Rule |
+|---|---|
+| `email` | Required. Stored in lowercase. |
+| `password` | Required. 12 to 128 characters, no other rule. |
+| `display_name` | Optional. Up to 100 characters. |
+
+The answer is the profile (see `GET /users/me`). It never contains the password.
+
+### `POST /auth/login`
+
+Body: `{"email": "...", "password": "..."}`. `200`:
+
+```json
+{"access_token": "...", "refresh_token": "...", "token_type": "bearer", "expires_in": 1800}
+```
+
+| Field | Meaning |
+|---|---|
+| `access_token` | Send it as `Authorization: Bearer ...`. |
+| `refresh_token` | Keep it; use it only with `/auth/refresh` and `/auth/logout`. |
+| `token_type` | Always `"bearer"`. |
+| `expires_in` | Seconds until the access token stops working (1800). |
+
+### `POST /auth/refresh`
+
+Body: `{"refresh_token": "..."}`. `200` with the same shape as login. The old refresh token is used up. Using an old one again cancels every token of the account, because it may have been stolen; log in again.
+
+### `POST /auth/logout`
+
+Login needed. Body: `{"refresh_token": "..."}`. `204` with no body. The access token keeps working until its 30 minutes are over.
+
+### `POST /auth/password/change`
+
+Login needed. Body: `{"current_password": "...", "new_password": "..."}`. `200` with a new pair of tokens (same shape as login). Every earlier token stops working. A login wait does not apply here.
+
+### `POST /auth/password/forgot`
+
+Body: `{"email": "..."}`. Always `200`:
+
+```json
+{"message": "If the account exists, a code was sent to the owner's Telegram."}
+```
+
+The code has six digits, works for 10 minutes and once. Asking again replaces the earlier code. Limits: one code a minute, three an hour, ten a day, counting used and cancelled codes too. When a limit is hit the answer is the same sentence and no code is sent.
+
+### `POST /auth/password/reset`
+
+Body: `{"email": "...", "code": "493 201", "new_password": "..."}` (the space in the code is optional). `200` with a `message`; `400 invalid_reset_code` otherwise. Five wrong codes cancel the code. A successful reset logs out every session and clears any login wait.
+
+### `GET /users/me`
+
+```json
+{"id": "3f2b8c1e-0000-4000-8000-000000000001", "email": "you@example.com", "display_name": "Manfred", "created_at": "2026-11-24T15:00:00Z", "last_login_at": "2026-11-24T15:05:00Z"}
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | The account's identifier. |
+| `email` | The login email, in lowercase. |
+| `display_name` | The name to show, or `null`. |
+| `created_at` | When the account was created (UTC). |
+| `last_login_at` | The last successful login (UTC), or `null`. |
+
+### `PATCH /users/me`
+
+Body: `{"display_name": "Manfred"}`. The field is required; `null` or `""` clears the name. `200` with the updated profile. The email cannot be changed.
 
 ## Integration checks
 

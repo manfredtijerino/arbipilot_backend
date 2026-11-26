@@ -42,7 +42,7 @@ From `docs/project-brief.md` §2. Each objective has a stage where it is built a
 |---|---|---|---|
 | 1 | Foundation and connections | 2 | **Passed 2026-11-23.** Owner started the app, ran both requests in Postman (200), approved. Commit `215c7b8` on `feature/foundation` |
 | 2 | Tables and migrations | 0 | **Passed 2026-11-24.** Migrations `0001` and `0002` on `arbipilot_dev` and `arbipilot_test`; owner checked the tables in pgAdmin and approved |
-| 3 | Login and users | 9 | Not started |
+| 3 | Login and users | 9 | Built 2026-11-24. Gate open: owner's Postman test and approval |
 | 4 | Connection checks | 7 | Not started |
 | 5 | Market data | 3 | Not started |
 | 6 | Risk limits and the risk engine | 1 | Blocked: needs owner action 0 |
@@ -170,6 +170,9 @@ Claude Code updates this table when a gate is passed, with the date.
 - **Example:** the same Postman collection, switched to the Production environment, runs through the SSH tunnel and every request passes.
 - **Built:** the Docker setup, the first `/deploy`, migrations on `arbipilot_prod`, the production `.env`, the Healthchecks ping, `/deploy-check`.
 - **Gate:** all 40 endpoints pass from Postman against production (the two development-only ones must answer 404 there); the startup lines show `Environment: PRODUCTION`, `Mode: SHADOW`; `/kill` works from the phone; stopping the app on purpose produces an alert within 10 minutes; the read-only pgAdmin connection can read and cannot change.
+- **Before this stage's deploy (from the stage 3 security review):**
+  - `POST /auth/register` is open to whoever calls it first. On the server, create the owner account with a command (`scripts/create_owner.py`) or require a one-time setup value, so nobody else can become the owner.
+  - A stranger who knows the owner's email can still slow the owner down: keep login at the 15-minute wait, use up the three reset codes an hour. A limit per caller address in front of `/auth` fixes this and must exist before the API is reachable from the internet (pre-live bundle, with HTTPS).
 - **This gate is the end of the backend build.** After it, the frontend may start.
 
 ### Stage 13: Paper-money period in production

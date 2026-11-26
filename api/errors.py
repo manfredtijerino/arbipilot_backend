@@ -11,6 +11,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from services.errors import ServiceError
+
 logger = logging.getLogger(__name__)
 
 CODES = {
@@ -48,6 +50,18 @@ async def _http_error(request: Request, exc: StarletteHTTPException) -> JSONResp
     return response
 
 
+async def _service_error(request: Request, exc: ServiceError) -> JSONResponse:
+    # Each service error carries its own code and a sentence written by us.
+    response = JSONResponse(
+        status_code=exc.status_code, content=error_body(exc.code, exc.message)
+    )
+    if exc.status_code == 401:
+        response.headers["WWW-Authenticate"] = "Bearer"
+    if exc.retry_after_seconds is not None:
+        response.headers["Retry-After"] = str(exc.retry_after_seconds)
+    return response
+
+
 async def _invalid_input(request: Request, exc: RequestValidationError) -> JSONResponse:
     # Name the fields that are wrong, never echo what was sent (it may be a password).
     fields = sorted(
@@ -73,5 +87,6 @@ async def _unexpected(request: Request, exc: Exception) -> JSONResponse:
 
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, _http_error)
+    app.add_exception_handler(ServiceError, _service_error)
     app.add_exception_handler(RequestValidationError, _invalid_input)
     app.add_exception_handler(Exception, _unexpected)

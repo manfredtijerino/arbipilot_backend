@@ -62,6 +62,8 @@ def create_app(settings: Settings) -> FastAPI:
     )
     app.state.settings = settings
     app.state.readiness = ReadinessCache()
+    # The database session maker. Made on the first request that needs it.
+    app.state.sessions = None
     # Off until `server.py` has seen the Claude API check pass at startup.
     # This is only the startup result: the trading loop (Day 3) keeps its own
     # live switch in the risk engine and must not rely on this alone.

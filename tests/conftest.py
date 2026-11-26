@@ -40,3 +40,49 @@ def make_settings() -> Callable[..., Settings]:
         return Settings(_env_file=None, **values)
 
     return build
+
+
+@pytest.fixture(autouse=True)
+def cheap_password_hashing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Real Argon2, with tiny settings so the tests stay fast."""
+    from argon2 import PasswordHasher
+
+    from services import security
+
+    monkeypatch.setattr(
+        security, "hasher", PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
+    )
+    monkeypatch.setattr(security, "_decoy", None)
+
+
+@pytest.fixture(autouse=True)
+def forget_unknown_email_waits() -> None:
+    from services import auth_service
+
+    auth_service.unknown_email_waits.clear()
+
+
+class FakeClock:
+    """A clock the test moves by hand."""
+
+    def __init__(self) -> None:
+        from datetime import UTC, datetime
+
+        self.now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+
+    def __call__(self) -> "datetime":  # noqa: F821
+        return self.now
+
+    def advance(self, **kwargs: float) -> None:
+        from datetime import timedelta
+
+        self.now += timedelta(**kwargs)
+
+
+@pytest.fixture
+def fake_clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
+    from services import clock
+
+    fake = FakeClock()
+    monkeypatch.setattr(clock, "utc_now", fake)
+    return fake

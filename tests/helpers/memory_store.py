@@ -1,0 +1,171 @@
+"""An in-memory stand-in for `database/repositories/store.py`.
+
+It follows the same rules as the real queries, so unit tests of the login
+logic need no database. The real SQL is tested by the integration tests.
+
+What it cannot show: two requests at the same moment (row locks), and work
+lost because a commit is missing. Those are covered by the integration tests
+in `tests/database/`.
+"""
+
+import uuid
+from datetime import UTC, datetime, timedelta
+
+from database.models import PasswordResetCode, RefreshToken, User
+from database.repositories.errors import DuplicateRow
+
+
+class MemoryUsers:
+    def __init__(self) -> None:
+        self.rows: dict[uuid.UUID, User] = {}
+
+    async def count(self) -> int:
+        return len(self.rows)
+
+    async def get_by_id(self, user_id: uuid.UUID, lock: bool = False) -> User | None:
+        return self.rows.get(user_id)
+
+    async def get_by_email(self, email: str, lock: bool = False) -> User | None:
+        return next((u for u in self.rows.values() if u.email == email), None)
+
+    async def add(self, user: User) -> None:
+        if self.rows:  # the table allows one row
+            raise DuplicateRow
+        user.id = user.id or uuid.uuid4()
+        user.failed_login_count = 0
+        user.created_at = user.updated_at = datetime.now(UTC)
+        self.rows[user.id] = user
+
+    async def record_failed_login(
+        self, user_id: uuid.UUID, now: datetime, longest_wait_seconds: int
+    ) -> None:
+        user = self.rows[user_id]
+        wait = min(2 ** min(user.failed_login_count, 20), longest_wait_seconds)
+        user.failed_login_count += 1
+        user.locked_until = now + timedelta(seconds=wait)
+
+    async def record_successful_login(self, user_id: uuid.UUID, now: datetime) -> None:
+        user = self.rows[user_id]
+        user.failed_login_count, user.locked_until, user.last_login_at = 0, None, now
+
+    async def set_password(
+        self, user_id: uuid.UUID, password_hash: str, now: datetime
+    ) -> None:
+        user = self.rows[user_id]
+        user.password_hash, user.password_changed_at = password_hash, now
+        user.failed_login_count, user.locked_until = 0, None
+
+    async def upgrade_password_hash(
+        self, user_id: uuid.UUID, password_hash: str
+    ) -> None:
+        self.rows[user_id].password_hash = password_hash
+
+    async def set_display_name(
+        self, user_id: uuid.UUID, display_name: str | None
+    ) -> User | None:
+        user = self.rows.get(user_id)
+        if user is not None:
+            user.display_name = display_name
+        return user
+
+
+class MemoryTokens:
+    def __init__(self) -> None:
+        self.rows: list[RefreshToken] = []
+
+    async def add(
+        self, user_id: uuid.UUID, token_hash: str, expires_at: datetime
+    ) -> None:
+        if any(row.token_hash == token_hash for row in self.rows):
+            raise DuplicateRow
+        self.rows.append(
+            RefreshToken(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                token_hash=token_hash,
+                expires_at=expires_at,
+                revoked_at=None,
+            )
+        )
+
+    async def get_by_hash(self, token_hash: str) -> RefreshToken | None:
+        return next((r for r in self.rows if r.token_hash == token_hash), None)
+
+    async def revoke(self, token_id: uuid.UUID, now: datetime) -> bool:
+        row = next(r for r in self.rows if r.id == token_id)
+        if row.revoked_at is not None:
+            return False
+        row.revoked_at = now
+        return True
+
+    async def revoke_all_for_user(self, user_id: uuid.UUID, now: datetime) -> None:
+        for row in self.rows:
+            if row.user_id == user_id and row.revoked_at is None:
+                row.revoked_at = now
+
+    def live(self) -> list[RefreshToken]:
+        return [row for row in self.rows if row.revoked_at is None]
+
+
+class MemoryCodes:
+    def __init__(self) -> None:
+        self.rows: list[PasswordResetCode] = []
+
+    async def get_live(self, user_id: uuid.UUID) -> PasswordResetCode | None:
+        return next(
+            (r for r in self.rows if r.user_id == user_id and r.used_at is None), None
+        )
+
+    async def cancel_live(self, user_id: uuid.UUID, now: datetime) -> None:
+        for row in self.rows:
+            if row.user_id == user_id and row.used_at is None:
+                row.used_at = now
+
+    async def get_latest(self, user_id: uuid.UUID) -> PasswordResetCode | None:
+        rows = [r for r in self.rows if r.user_id == user_id]
+        return max(rows, key=lambda r: r.created_at) if rows else None
+
+    async def count_since(self, user_id: uuid.UUID, since: datetime) -> int:
+        return len(
+            [r for r in self.rows if r.user_id == user_id and r.created_at > since]
+        )
+
+    async def add(
+        self, user_id: uuid.UUID, code_hash: str, expires_at: datetime, now: datetime
+    ) -> None:
+        if await self.get_live(user_id) is not None:
+            raise DuplicateRow  # the table allows one unused code per user
+        self.rows.append(
+            PasswordResetCode(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                code_hash=code_hash,
+                expires_at=expires_at,
+                attempts=0,
+                used_at=None,
+                created_at=now,
+            )
+        )
+
+    async def add_attempt(self, code_id: uuid.UUID) -> int:
+        row = next(r for r in self.rows if r.id == code_id)
+        row.attempts += 1
+        return row.attempts
+
+    async def mark_used(self, code_id: uuid.UUID, now: datetime) -> bool:
+        row = next(r for r in self.rows if r.id == code_id)
+        if row.used_at is not None:
+            return False
+        row.used_at = now
+        return True
+
+
+class MemoryStore:
+    def __init__(self) -> None:
+        self.users = MemoryUsers()
+        self.tokens = MemoryTokens()
+        self.codes = MemoryCodes()
+        self.commits = 0
+
+    async def commit(self) -> None:
+        self.commits += 1

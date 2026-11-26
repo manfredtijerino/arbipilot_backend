@@ -75,3 +75,17 @@ async def send_alert(settings: Settings, text: str, bot: Any | None = None) -> N
     except TelegramError as exc:
         raise TelegramCheckError(_describe(exc)) from None
     logger.info("telegram message sent")
+
+
+async def send_reset_code(settings: Settings, text: str) -> None:
+    """Send the password reset code to the owner. Never raises.
+
+    It runs after the API has already answered, so a failure is only logged:
+    the owner asks for a new code a minute later.
+    """
+    try:
+        await send_alert(settings, text)
+    except TelegramCheckError as exc:
+        logger.warning("reset code not delivered: %s", exc)
+    except Exception as exc:  # noqa: BLE001 - a background task must not crash
+        logger.error("reset code not delivered: unexpected %s", type(exc).__name__)
