@@ -1,0 +1,22 @@
+# Settings for the code checker (ruff) and the test runner (pytest).
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+extend-exclude = [".venv", "database/migrations/versions"]
+
+[tool.ruff.lint]
+# E/W: style errors, F: real mistakes (unused or undefined names), I: import order,
+# UP: outdated syntax, B: common bugs, DTZ: datetimes without a timezone.
+select = ["E", "W", "F", "I", "UP", "B", "DTZ"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+# Plain `pytest` runs unit tests only. `pytest -m integration` runs the database tests.
+addopts = "-m 'not integration'"
+markers = [
+    "integration: uses the arbipilot_test database (run with: pytest -m integration)",
+]

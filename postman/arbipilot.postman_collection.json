@@ -1,0 +1,1376 @@
+{
+ "info": {
+  "_postman_id": "0b6f6f0e-6f1c-4f58-9f5e-a7b1c0de0001",
+  "name": "ArbiPilot",
+  "description": "Every endpoint of the ArbiPilot backend, one folder per group, in the same order as docs/api.md. Choose the Development or Production environment (top right) before sending. No token, password or key is saved in this file.",
+  "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+ },
+ "item": [
+  {
+   "name": "Health",
+   "description": "No login needed.",
+   "item": [
+    {
+     "name": "Health - is the app alive?",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 200', function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "pm.test('Says which environment and mode', function () {",
+         "    const body = pm.response.json();",
+         "    pm.expect(body.status).to.eql('ok');",
+         "    pm.expect(body.environment).to.be.oneOf(['development', 'production']);",
+         "    pm.expect(body.trading_mode).to.be.oneOf(['shadow', 'testnet', 'live']);",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "noauth"
+      },
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/health",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "health"
+       ]
+      },
+      "description": "Returns the environment, the trading mode and the version. Always 200 while the app runs."
+     },
+     "response": [
+      {
+       "name": "200 - alive",
+       "originalRequest": {
+        "method": "GET",
+        "header": [],
+        "url": {
+         "raw": "{{base_url}}/health",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "health"
+         ]
+        }
+       },
+       "status": "OK",
+       "code": 200,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"status\": \"ok\",\n  \"environment\": \"development\",\n  \"trading_mode\": \"shadow\",\n  \"version\": \"0.1.0\"\n}"
+      }
+     ]
+    },
+    {
+     "name": "Ready - is everything connected?",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 200 (everything is connected)', function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "pm.test('Lists the four checks', function () {",
+         "    const checks = pm.response.json().checks;",
+         "    pm.expect(checks).to.have.all.keys('database', 'binance', 'claude', 'telegram');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "noauth"
+      },
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/health/ready",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "health",
+        "ready"
+       ]
+      },
+      "description": "200 when the database, Binance, the Claude API and Telegram all answer. 503 when any one fails; the body then says which one and why. The answer is reused for 15 seconds."
+     },
+     "response": [
+      {
+       "name": "200 - everything connected",
+       "originalRequest": {
+        "method": "GET",
+        "header": [],
+        "url": {
+         "raw": "{{base_url}}/health/ready",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "health",
+          "ready"
+         ]
+        }
+       },
+       "status": "OK",
+       "code": 200,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"status\": \"ok\",\n  \"environment\": \"development\",\n  \"checks\": {\n    \"database\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    },\n    \"binance\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    },\n    \"claude\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    },\n    \"telegram\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    }\n  }\n}"
+      },
+      {
+       "name": "503 - the database is unreachable",
+       "originalRequest": {
+        "method": "GET",
+        "header": [],
+        "url": {
+         "raw": "{{base_url}}/health/ready",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "health",
+          "ready"
+         ]
+        }
+       },
+       "status": "Service Unavailable",
+       "code": 503,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"status\": \"failed\",\n  \"environment\": \"development\",\n  \"checks\": {\n    \"database\": {\n      \"status\": \"failed\",\n      \"detail\": \"could not reach the managed database (host unreachable)\"\n    },\n    \"binance\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    },\n    \"claude\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    },\n    \"telegram\": {\n      \"status\": \"ok\",\n      \"detail\": \"\"\n    }\n  }\n}"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Login",
+   "description": "Register once, then log in. The Login request saves both tokens into the environment by itself; every later request sends the access token automatically. Type your email and password into the environment (top right, eye icon), never into this file.",
+   "item": [
+    {
+     "name": "Register - create the owner account",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 201', function () {",
+         "    pm.response.to.have.status(201);",
+         "});",
+         "pm.test('No password in the answer', function () {",
+         "    pm.expect(pm.response.text()).to.not.include('password');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "noauth"
+      },
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/auth/register",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "auth",
+        "register"
+       ]
+      },
+      "description": "Creates the owner account. Works once: after that it answers 409 for good. Uses {{email}} and {{password}} from the environment. The password needs at least 12 characters.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"display_name\": \"Manfred\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "response": [
+      {
+       "name": "201 - account created",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/register",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "register"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"display_name\": \"Manfred\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "Created",
+       "code": 201,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"id\": \"3f2b8c1e-0000-4000-8000-000000000001\",\n  \"email\": \"you@example.com\",\n  \"display_name\": \"Manfred\",\n  \"created_at\": \"2026-11-24T15:00:00Z\",\n  \"last_login_at\": null\n}"
+      },
+      {
+       "name": "409 - the account already exists",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/register",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "register"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\",\n  \"display_name\": \"Manfred\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "Conflict",
+       "code": 409,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"error\": {\n    \"code\": \"registration_closed\",\n    \"message\": \"The owner account already exists.\"\n  }\n}"
+      }
+     ]
+    },
+    {
+     "name": "Login",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 200', function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "pm.test('Tokens saved for the next requests', function () {",
+         "    const body = pm.response.json();",
+         "    pm.expect(body.access_token).to.be.a('string');",
+         "    pm.environment.set('access_token', body.access_token);",
+         "    pm.environment.set('refresh_token', body.refresh_token);",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "noauth"
+      },
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/auth/login",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "auth",
+        "login"
+       ]
+      },
+      "description": "Checks the email and password. Returns an access token (30 minutes) and a refresh token (7 days), and saves both into the environment. Wrong passwords cause growing waits: 1 s, 2 s, 4 s ... up to 15 minutes.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "response": [
+      {
+       "name": "200 - logged in",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/login",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "login"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "OK",
+       "code": 200,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"access_token\": \"<access token>\",\n  \"refresh_token\": \"<refresh token>\",\n  \"token_type\": \"bearer\",\n  \"expires_in\": 1800\n}"
+      },
+      {
+       "name": "401 - wrong email or password",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/login",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "login"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "Unauthorized",
+       "code": 401,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"error\": {\n    \"code\": \"invalid_credentials\",\n    \"message\": \"The email or password is wrong.\"\n  }\n}"
+      },
+      {
+       "name": "429 - waiting after wrong passwords",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/login",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "login"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "Too Many Requests",
+       "code": 429,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"error\": {\n    \"code\": \"too_many_attempts\",\n    \"message\": \"Too many wrong attempts. Try again in 8 seconds.\"\n  }\n}"
+      }
+     ]
+    },
+    {
+     "name": "Refresh - get new tokens",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 200', function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "pm.test('Tokens saved for the next requests', function () {",
+         "    const body = pm.response.json();",
+         "    pm.expect(body.access_token).to.be.a('string');",
+         "    pm.environment.set('access_token', body.access_token);",
+         "    pm.environment.set('refresh_token', body.refresh_token);",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "noauth"
+      },
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/auth/refresh",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "auth",
+        "refresh"
+       ]
+      },
+      "description": "Swaps the refresh token for a new pair and saves it. Each refresh token works once.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "response": [
+      {
+       "name": "200 - new tokens",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/refresh",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "refresh"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "OK",
+       "code": 200,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"access_token\": \"<access token>\",\n  \"refresh_token\": \"<refresh token>\",\n  \"token_type\": \"bearer\",\n  \"expires_in\": 1800\n}"
+      },
+      {
+       "name": "401 - token used, cancelled or expired",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/refresh",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "refresh"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "Unauthorized",
+       "code": 401,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"error\": {\n    \"code\": \"invalid_refresh_token\",\n    \"message\": \"The refresh token is not valid. Log in again.\"\n  }\n}"
+      }
+     ]
+    },
+    {
+     "name": "Change password",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 200', function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "pm.test('Tokens saved for the next requests', function () {",
+         "    const body = pm.response.json();",
+         "    pm.expect(body.access_token).to.be.a('string');",
+         "    pm.environment.set('access_token', body.access_token);",
+         "    pm.environment.set('refresh_token', body.refresh_token);",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{access_token}}",
+         "type": "string"
+        }
+       ]
+      },
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/auth/password/change",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "auth",
+        "password",
+        "change"
+       ]
+      },
+      "description": "Changes the password while logged in. Every other session is logged out; the answer carries new tokens, saved automatically. Put the new password in the environment variable new_password first. Afterwards, copy it into the password variable.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"current_password\": \"{{password}}\",\n  \"new_password\": \"{{new_password}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "response": [
+      {
+       "name": "200 - password changed",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/password/change",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "password",
+          "change"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"current_password\": \"{{password}}\",\n  \"new_password\": \"{{new_password}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "OK",
+       "code": 200,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"access_token\": \"<access token>\",\n  \"refresh_token\": \"<refresh token>\",\n  \"token_type\": \"bearer\",\n  \"expires_in\": 1800\n}"
+      },
+      {
+       "name": "401 - the current password is wrong",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/password/change",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "password",
+          "change"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"current_password\": \"{{password}}\",\n  \"new_password\": \"{{new_password}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "Unauthorized",
+       "code": 401,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"error\": {\n    \"code\": \"invalid_credentials\",\n    \"message\": \"The current password is wrong.\"\n  }\n}"
+      }
+     ]
+    },
+    {
+     "name": "Forgot password - send a code to Telegram",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 200', function () {",
+         "    pm.response.to.have.status(200);",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "noauth"
+      },
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/auth/password/forgot",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "auth",
+        "password",
+        "forgot"
+       ]
+      },
+      "description": "Sends a six-digit code to the owner's Telegram. It works for 10 minutes and once. The answer is the same whether or not the email exists. A new code can be asked for once a minute.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"{{email}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "response": [
+      {
+       "name": "200 - same answer in every case",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/password/forgot",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "password",
+          "forgot"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"email\": \"{{email}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "OK",
+       "code": 200,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"message\": \"If the account exists, a code was sent to the owner's Telegram.\"\n}"
+      }
+     ]
+    },
+    {
+     "name": "Reset password - use the code",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 200', function () {",
+         "    pm.response.to.have.status(200);",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "noauth"
+      },
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/auth/password/reset",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "auth",
+        "password",
+        "reset"
+       ]
+      },
+      "description": "Sets a new password using the code from Telegram. Replace 000000 in the body with your code (the space in the middle is optional). Five wrong codes cancel it. Afterwards, copy the new password into the password variable and log in.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"email\": \"{{email}}\",\n  \"code\": \"000000\",\n  \"new_password\": \"{{new_password}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "response": [
+      {
+       "name": "200 - password changed",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/password/reset",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "password",
+          "reset"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"email\": \"{{email}}\",\n  \"code\": \"000000\",\n  \"new_password\": \"{{new_password}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "OK",
+       "code": 200,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"message\": \"The password was changed. Log in with the new one.\"\n}"
+      },
+      {
+       "name": "400 - wrong, used or expired code",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/password/reset",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "password",
+          "reset"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"email\": \"{{email}}\",\n  \"code\": \"000000\",\n  \"new_password\": \"{{new_password}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "Bad Request",
+       "code": 400,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"error\": {\n    \"code\": \"invalid_reset_code\",\n    \"message\": \"The code is wrong or has expired. Ask for a new one.\"\n  }\n}"
+      }
+     ]
+    },
+    {
+     "name": "Logout",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 204', function () {",
+         "    pm.response.to.have.status(204);",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{access_token}}",
+         "type": "string"
+        }
+       ]
+      },
+      "method": "POST",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/auth/logout",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "auth",
+        "logout"
+       ]
+      },
+      "description": "Cancels the refresh token. The access token keeps working until its 30 minutes are over.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "response": [
+      {
+       "name": "204 - logged out",
+       "originalRequest": {
+        "method": "POST",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/auth/logout",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "auth",
+          "logout"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "No Content",
+       "code": 204,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": ""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Users",
+   "description": "The owner's profile. Login needed.",
+   "item": [
+    {
+     "name": "Me - my profile",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 200', function () {",
+         "    pm.response.to.have.status(200);",
+         "});",
+         "pm.test('No password in the answer', function () {",
+         "    pm.expect(pm.response.text()).to.not.include('password');",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{access_token}}",
+         "type": "string"
+        }
+       ]
+      },
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/users/me",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "users",
+        "me"
+       ]
+      },
+      "description": "Returns the logged-in user's profile. Without a valid access token it answers 401."
+     },
+     "response": [
+      {
+       "name": "200 - profile",
+       "originalRequest": {
+        "method": "GET",
+        "header": [],
+        "url": {
+         "raw": "{{base_url}}/users/me",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "users",
+          "me"
+         ]
+        }
+       },
+       "status": "OK",
+       "code": 200,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"id\": \"3f2b8c1e-0000-4000-8000-000000000001\",\n  \"email\": \"you@example.com\",\n  \"display_name\": \"Manfred\",\n  \"created_at\": \"2026-11-24T15:00:00Z\",\n  \"last_login_at\": \"2026-11-24T15:05:00Z\"\n}"
+      },
+      {
+       "name": "401 - not logged in",
+       "originalRequest": {
+        "method": "GET",
+        "header": [],
+        "url": {
+         "raw": "{{base_url}}/users/me",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "users",
+          "me"
+         ]
+        }
+       },
+       "status": "Unauthorized",
+       "code": 401,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"error\": {\n    \"code\": \"not_authenticated\",\n    \"message\": \"Log in first.\"\n  }\n}"
+      }
+     ]
+    },
+    {
+     "name": "Me - change display name",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 200', function () {",
+         "    pm.response.to.have.status(200);",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "bearer",
+       "bearer": [
+        {
+         "key": "token",
+         "value": "{{access_token}}",
+         "type": "string"
+        }
+       ]
+      },
+      "method": "PATCH",
+      "header": [
+       {
+        "key": "Content-Type",
+        "value": "application/json"
+       }
+      ],
+      "url": {
+       "raw": "{{base_url}}/users/me",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "users",
+        "me"
+       ]
+      },
+      "description": "Changes the display name. Send null to clear it. The email cannot be changed here.",
+      "body": {
+       "mode": "raw",
+       "raw": "{\n  \"display_name\": \"Manfred\"\n}",
+       "options": {
+        "raw": {
+         "language": "json"
+        }
+       }
+      }
+     },
+     "response": [
+      {
+       "name": "200 - updated profile",
+       "originalRequest": {
+        "method": "PATCH",
+        "header": [
+         {
+          "key": "Content-Type",
+          "value": "application/json"
+         }
+        ],
+        "url": {
+         "raw": "{{base_url}}/users/me",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "users",
+          "me"
+         ]
+        },
+        "body": {
+         "mode": "raw",
+         "raw": "{\n  \"display_name\": \"Manfred\"\n}",
+         "options": {
+          "raw": {
+           "language": "json"
+          }
+         }
+        }
+       },
+       "status": "OK",
+       "code": 200,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"id\": \"3f2b8c1e-0000-4000-8000-000000000001\",\n  \"email\": \"you@example.com\",\n  \"display_name\": \"Manfred\",\n  \"created_at\": \"2026-11-24T15:00:00Z\",\n  \"last_login_at\": \"2026-11-24T15:05:00Z\"\n}"
+      }
+     ]
+    },
+    {
+     "name": "Me - without a token (must be refused)",
+     "event": [
+      {
+       "listen": "test",
+       "script": {
+        "type": "text/javascript",
+        "exec": [
+         "pm.test('Status is 401', function () {",
+         "    pm.response.to.have.status(401);",
+         "});"
+        ]
+       }
+      }
+     ],
+     "request": {
+      "auth": {
+       "type": "noauth"
+      },
+      "method": "GET",
+      "header": [],
+      "url": {
+       "raw": "{{base_url}}/users/me",
+       "host": [
+        "{{base_url}}"
+       ],
+       "path": [
+        "users",
+        "me"
+       ]
+      },
+      "description": "The same request with no token. It must answer 401: that is the proof the door is locked."
+     },
+     "response": [
+      {
+       "name": "401 - not logged in",
+       "originalRequest": {
+        "method": "GET",
+        "header": [],
+        "url": {
+         "raw": "{{base_url}}/users/me",
+         "host": [
+          "{{base_url}}"
+         ],
+         "path": [
+          "users",
+          "me"
+         ]
+        }
+       },
+       "status": "Unauthorized",
+       "code": 401,
+       "_postman_previewlanguage": "json",
+       "header": [
+        {
+         "key": "Content-Type",
+         "value": "application/json"
+        }
+       ],
+       "body": "{\n  \"error\": {\n    \"code\": \"not_authenticated\",\n    \"message\": \"Log in first.\"\n  }\n}"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
