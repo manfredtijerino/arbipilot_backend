@@ -6,7 +6,7 @@ What Manfred must do by hand. Claude Code announces each one with an OWNER ACTIO
 
 | # | Action | When | Status |
 |---|---|---|---|
-| 0 | Put `OBJECTIVES.md`, the context/decisions file and `docs/day0-recap.md` into the repo (or say where they are) | Before Day 2 | Pending |
+| 0 | Put `OBJECTIVES.md`, the context/decisions file and `docs/day0-recap.md` into the repo (or say where they are) | Before Day 2 | **Partly replaced 2026-11-27:** the files are not on the laptop, so the owner gave the stage 6 limits himself in the session (8% per trade, 2% daily loss, 3 trades open, 1 per pair, 8 orders a minute, 300 USDT paper capital; written in `decisions.yaml`). Still needed before stage 7: the strategy (when to buy and sell) and the pairs to watch, from `OBJECTIVES.md` or from his answers |
 | 2c | **Replace the development Telegram bot token.** On 2026-11-16 a library logged Telegram's web address, which contains the token, and it was shown in the Claude Code chat (cause fixed the same day in `config/logging.py`). In Telegram: @BotFather → `/revoke` → choose the bot → copy the new token into `TELEGRAM_BOT_TOKEN` in the laptop's `.env` and into the password manager | Now | **Owner decision 2026-11-20: he keeps the current token and does not replace it.** The exposure was limited to the Claude Code chat; the token is in no project file. Can be revoked at any time |
 | 3 | Create a development Telegram bot with @BotFather. A bot token is in the laptop's `.env` and works; waiting for him to confirm it is the development bot and not the production one | Day 1 | Pending confirmation |
 | 4 | Install pgAdmin and add the two connections | Day 1, after the database exists | Pending |

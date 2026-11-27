@@ -104,3 +104,14 @@ def parse_exchange_info(body: Any, symbols: tuple[str, ...]) -> dict[str, Symbol
     if missing:
         raise RulesError(f"Binance sent no trading rules for {', '.join(missing)}")
     return {symbol: rules[symbol] for symbol in symbols}
+
+
+def floor_to_step(value: Decimal, step: Decimal) -> Decimal:
+    """The largest multiple of `step` that is not above `value`. Both positive."""
+    return (value // step) * step
+
+
+def ceil_to_step(value: Decimal, step: Decimal) -> Decimal:
+    """The smallest multiple of `step` that is not below `value`. Both positive."""
+    floored = floor_to_step(value, step)
+    return floored if floored == value else floored + step

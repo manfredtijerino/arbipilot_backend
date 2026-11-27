@@ -409,10 +409,58 @@ Errors: `404` `unknown_symbol` (not on the watch list), `422` (not a pair name),
 | Method | Path | Login | Dev only | What it does | Status |
 |---|---|---|---|---|---|
 | GET | `/trading/status` | Yes | No | Environment, mode, running or paused (and why), open positions, today's profit or loss. | Planned |
-| GET | `/trading/risk` | Yes | No | The current limits from `decisions.yaml` and how much of each is used today. | Planned |
+| GET | `/trading/risk` | Yes | No | The current limits from `decisions.yaml` and how much of each is used today. | **Built** |
 | POST | `/trading/kill` | Yes | No | Pauses trading and cancels open orders. | Planned |
 | POST | `/trading/resume` | Yes | No | Resumes trading after a pause. | Planned |
 | POST | `/trading/orders/test` | Yes | **Yes** | Sends one test order through the full path (risk engine, router, fill) in shadow or testnet. | Planned |
+
+### `GET /trading/risk`
+
+The owner's limits, and how much of each is used right now. Money and shares are text. No request can change a limit: they change only in `decisions.yaml`.
+
+```json
+{
+  "limits": {
+    "max_position_pct_equity": "0.08",
+    "daily_loss_pause_pct": "0.02",
+    "max_open_positions": 3,
+    "max_positions_per_symbol": 1,
+    "max_orders_per_minute": 8
+  },
+  "usage": {
+    "equity": "300",
+    "equity_source": "paper starting balance (no trades yet)",
+    "max_position_value": "24.00",
+    "day": "2026-11-27",
+    "day_start_equity": "300",
+    "day_profit_or_loss": "0",
+    "daily_loss_limit_value": "6.00",
+    "entries_paused": false,
+    "pause_reason": "",
+    "open_positions": 0,
+    "orders_last_minute": 0
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `limits.max_position_pct_equity` | One trade may use at most this share of the account. `"0.08"` = 8%. |
+| `limits.daily_loss_pause_pct` | After losing this share in one UTC day, no new trade is opened until the next UTC day. `"0.02"` = 2%. |
+| `limits.max_open_positions` | How many trades may be open at once, over all pairs. |
+| `limits.max_positions_per_symbol` | How many trades may be open at once in one pair. |
+| `limits.max_orders_per_minute` | At most this many orders in any 60 seconds (a guard against a runaway bug). |
+| `usage.equity` | What the account is worth now: cash plus coins held. |
+| `usage.equity_source` | Where that value comes from. Until stage 7 it is the paper starting balance. |
+| `usage.max_position_value` | The biggest trade allowed right now: the share above times `equity`. |
+| `usage.day` / `usage.day_start_equity` | The UTC day being counted, and the account's value when it began. |
+| `usage.day_profit_or_loss` | Today's result. Negative is a loss. |
+| `usage.daily_loss_limit_value` | The loss at which new trades stop today. |
+| `usage.entries_paused` / `usage.pause_reason` | `true` once today's loss reached the limit, and why. Closing trades is still allowed. |
+| `usage.open_positions` | Trades open now, including entry orders still waiting. |
+| `usage.orders_last_minute` | Orders approved in the last 60 seconds. |
+
+What the risk engine does with an order (used from stage 7 on): **approved**, **reduced** (cut to the position cap or to the free cash), or **rejected** with one of these codes: `trading_paused`, `unknown_symbol`, `rules_stale`, `pair_not_trading`, `price_unavailable`, `price_stale`, `no_equity`, `daily_loss_pause`, `position_exists`, `max_open_positions`, `order_rate_limit`, `below_minimum`, `invalid_order`, `nothing_to_sell`.
 
 ## Data
 

@@ -2691,6 +2691,89 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Trading control",
+      "description": "The risk limits and, later, the trading controls. Log in first. No request here can change a limit: limits change only in decisions.yaml, by the owner's decision.",
+      "item": [
+        {
+          "name": "Risk - my limits and how much is used",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('The limits are the ones I decided', function () {",
+                  "    const l = pm.response.json().limits;",
+                  "    pm.expect(l.max_position_pct_equity).to.eql('0.08');",
+                  "    pm.expect(l.daily_loss_pause_pct).to.eql('0.02');",
+                  "    pm.expect(l.max_open_positions).to.eql(3);",
+                  "    pm.expect(l.max_orders_per_minute).to.eql(8);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/trading/risk",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trading",
+                "risk"
+              ]
+            },
+            "description": "The limits from decisions.yaml and how much of each is used right now. 0.08 means 8% of the account per trade; 0.02 means new trades stop after losing 2% in one UTC day. Until the paper account exists (stage 7) the account value shown is the 300 USDT starting balance."
+          },
+          "response": [
+            {
+              "name": "200 - the limits",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/trading/risk",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "trading",
+                    "risk"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"limits\": {\n    \"max_position_pct_equity\": \"0.08\",\n    \"daily_loss_pause_pct\": \"0.02\",\n    \"max_open_positions\": 3,\n    \"max_positions_per_symbol\": 1,\n    \"max_orders_per_minute\": 8\n  },\n  \"usage\": {\n    \"equity\": \"300\",\n    \"equity_source\": \"paper starting balance (no trades yet)\",\n    \"max_position_value\": \"24.00\",\n    \"day\": \"2026-11-27\",\n    \"day_start_equity\": \"300\",\n    \"day_profit_or_loss\": \"0\",\n    \"daily_loss_limit_value\": \"6.00\",\n    \"entries_paused\": false,\n    \"pause_reason\": \"\",\n    \"open_positions\": 0,\n    \"orders_last_minute\": 0\n  }\n}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

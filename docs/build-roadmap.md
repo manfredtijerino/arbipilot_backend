@@ -45,7 +45,7 @@ From `docs/project-brief.md` §2. Each objective has a stage where it is built a
 | 3 | Login and users | 9 | **Passed 2026-11-26.** Owner ran all nine endpoints from his own Postman collection, checked the `users` row in pgAdmin and approved. Commit `7a3ab99`, merged to `main` by pull request #1 (`8bf4847`) |
 | 4 | Connection checks | 7 | **Passed 2026-11-27.** Owner built the seven requests in his own Postman collection, ran them against development and approved. Branch `feature/connection-checks`. Still to prove at stage 12 with the mainnet keys: withdrawals off, IP lock, Spot only |
 | 5 | Market data | 3 | **Passed 2026-11-27.** Owner built the three requests in his own Postman collection, ran them against development and approved. One-hour stream run with a forced drop at minute 30: reconnected in 2 seconds, 712,817 messages, 0 unusable. Branch `feature/market-data`. Watched pairs are a placeholder (`MARKET_SYMBOLS`) until `OBJECTIVES.md` names them |
-| 6 | Risk limits and the risk engine | 1 | Blocked: needs owner action 0 |
+| 6 | Risk limits and the risk engine | 1 | **Passed 2026-11-27.** Owner read the limits in Postman, confirmed they are his, and approved. Branch `feature/risk-engine`. The owner gave the limits himself in the session (the three documents of action 0 are not on the laptop): 8% per trade, 2% daily loss, 3 trades open, 1 per pair, 8 orders a minute, 300 USDT paper capital |
 | 7 | Strategy and honest paper fills | 1 | Blocked: needs owner action 0 |
 | 8 | Order path and the kill switch | 5 | Not started |
 | 9 | AI judge and its budget | 3 | Not started |
@@ -141,6 +141,14 @@ Claude Code updates this table when a gate is passed, with the date.
 - **Endpoint:** `GET /signals`.
 - **Needs first:** owner action 0 (`OBJECTIVES.md` defines the strategy).
 - **Gate:** replaying a recorded stream produces the same signals and fills every time; the owner sees signals listed in Postman and the fee on a sample trade matches a hand calculation (a $24 trade pays $0.018 per side).
+- **Carried over from stage 6 (must be handled here):**
+  - Store the day's starting equity and the daily-loss pause in the database, so a restart cannot forget a pause (today they are in memory).
+  - Replace the paper starting balance behind `GET /trading/risk` with the real paper account (cash, positions, entry orders waiting).
+  - The strategy and the watched pairs still need the owner's word: `OBJECTIVES.md`, or his answers in the session.
+  - Build a new account snapshot for every order, with entry orders still waiting in `pending_entries` and exit orders still waiting in `Position.reserved`. The engine does not remember what it approved.
+  - Call the engine on every change of the account's value, not only on orders, so the daily loss is always seen.
+  - Alert when an exit is refused because the pair's rules are not loaded; consider keeping the last known rules across a restart.
+  - Stage 8: the kill switch calls `RiskEngine.pause()` and `resume()`, and its state is stored so a restart stays paused. Consider a generous, alerting limit on sell orders per minute.
 
 ### Stage 8: Order path and the kill switch
 
