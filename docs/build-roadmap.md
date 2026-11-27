@@ -288,6 +288,18 @@ After the dip strategy failed, the owner chose to test "following the trend" as 
 
 **After the result.** A fail means this idea is not built and not traded, and it is not retuned on these years. A pass means it is built on plain rules and must then run on paper for some weeks, which proves the machinery (orders, saving, restarts) and not the profit. No real money before both.
 
+**Result of step 1, the choosing period (2026-11-27, run after commit `aa05be6`).** 72 USDT, 1 January 2018 to 31 October 2022, at the 0.1% fee. No day is missing from the data.
+
+| | Trades | Wins | Profit | Worst drop | Profit without the best trade |
+|---|---|---|---|---|---|
+| Buy-and-hold | 3 | 3 | +926.83 USDT | 84.0% | — |
+| 1. `N`=20, `M`=10 | 102 | 53 | +355.21 USDT | 48.9% | +200.63 USDT |
+| 2. `N`=20, `M`=20 | 69 | 36 | +617.24 USDT | 57.2% | +273.32 USDT |
+| 3. `N`=55, `M`=10 | 67 | 32 | +284.10 USDT | 38.6% | +134.76 USDT |
+| 4. `N`=55, `M`=20 | 44 | 26 | +515.23 USDT | 44.1% | +182.08 USDT |
+
+**Chosen for the hidden period: combination 2 (`N`=20, `M`=20).** Noted before the hidden run: on the choosing period itself this combination would not have met condition (c), because it earned less than buy-and-hold and its worst drop (57.2%) is more than half of buy-and-hold's (84.0%). The hidden period is still unseen.
+
 ### Stage 8: Order path and the kill switch
 
 - **Goal:** one path for every order (signal → risk engine → router → fill → record) and a stop button that works from the phone.
