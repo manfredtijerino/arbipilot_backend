@@ -300,6 +300,22 @@ After the dip strategy failed, the owner chose to test "following the trend" as 
 
 **Chosen for the hidden period: combination 2 (`N`=20, `M`=20).** Noted before the hidden run: on the choosing period itself this combination would not have met condition (c), because it earned less than buy-and-hold and its worst drop (57.2%) is more than half of buy-and-hold's (84.0%). The hidden period is still unseen.
 
+**Result of step 3, the hidden period (2026-11-27, run once, after commit `7deb2db`): FAILED on condition (c).** 72 USDT, 1 November 2022 to 31 October 2026, at the 0.1% fee. The full output is in `docs/trend-hidden-result.txt`.
+
+| | Trades | Wins | Profit | Worst drop | Profit without the best trade |
+|---|---|---|---|---|---|
+| Buy-and-hold | 3 | 3 | +104.62 USDT | 57.1% | — |
+| Combination 2 (`N`=20, `M`=20) | 72 | 29 | +62.53 USDT | 31.3% | +46.23 USDT |
+
+By pair: BTCUSDT 25 trades, +28.96 USDT; ETHUSDT 24 trades, +17.56 USDT; BNBUSDT 23 trades, +16.01 USDT.
+
+- (a) at least 20 trades: yes (72).
+- (b) profit above zero: yes.
+- (c) at least buy-and-hold's profit, or half of it with half the drop: **no**. The profit (62.53) is more than half of buy-and-hold's (52.31 needed), but the worst drop (31.3%) is more than half of buy-and-hold's (28.6% allowed).
+- (d) profit above zero without the best trade: yes.
+
+By the rule above, this idea is not built and not traded, and it is not retuned on these years. The hidden period has now been used for 1 of at most 3 ideas.
+
 ### Stage 8: Order path and the kill switch
 
 - **Goal:** one path for every order (signal → risk engine → router → fill → record) and a stop button that works from the phone.
