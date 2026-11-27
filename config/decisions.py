@@ -33,6 +33,7 @@ HIGHEST_DAILY_LOSS_PCT = Decimal("0.10")
 HIGHEST_OPEN_POSITIONS = 10
 HIGHEST_ORDERS_PER_MINUTE = 60
 HIGHEST_STARTING_EQUITY = Decimal("100000")
+HIGHEST_FEE_PCT = Decimal("0.01")
 
 
 class DecisionsError(Exception):
@@ -112,6 +113,23 @@ class RiskLimits(_Strict):
         return self
 
 
+class Fees(_Strict):
+    """What Binance charges, as a share of each order's value."""
+
+    # For an order that fills at once (a "taker" order).
+    taker_pct: Decimal
+
+    @field_validator("taker_pct", mode="before")
+    @classmethod
+    def _text_to_decimal(cls, value: Any) -> Decimal:
+        return _exact(value)
+
+    @field_validator("taker_pct")
+    @classmethod
+    def _fee_share(cls, value: Decimal) -> Decimal:
+        return _share(value, HIGHEST_FEE_PCT)
+
+
 class ShadowAccount(_Strict):
     starting_equity_usdt: Decimal
 
@@ -130,6 +148,7 @@ class ShadowAccount(_Strict):
 
 class Decisions(_Strict):
     risk: RiskLimits
+    fees: Fees
     shadow: ShadowAccount
 
 
@@ -153,7 +172,9 @@ def _explain(error: ValidationError) -> str:
 
 def parse_decisions(data: Any) -> Decisions:
     if not isinstance(data, dict):
-        raise DecisionsError("decisions.yaml must hold the `risk` and `shadow` blocks")
+        raise DecisionsError(
+            "decisions.yaml must hold the `risk`, `fees` and `shadow` blocks"
+        )
     try:
         return Decisions.model_validate(data)
     except ValidationError as exc:

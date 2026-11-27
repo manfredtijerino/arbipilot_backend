@@ -13,15 +13,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.errors import register_error_handlers
-from api.router import api_router
-from config.database import dispose_engine
+from api.router import API_PREFIX, api_router
+from api.routes.trading import dev_router as dev_trading_router
+from config.database import dispose_engine, get_engine, session_factory
 from config.decisions import Decisions, load_decisions
 from config.settings import Settings
 from config.version import APP_VERSION
+from database.repositories.store import Store
 from services import clock
 from services.integration_service import CheckResult, CheckThrottle, ReadinessCache
 from services.market_service import MarketData
-from trading.account import starting_account
+from services.paper_service import PaperTrading
 from trading.risk import RiskEngine
 
 OK = "✔"
@@ -61,6 +63,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         await dispose_engine()
 
 
+@asynccontextmanager
+async def _open_store(app: FastAPI) -> AsyncIterator[Store]:
+    """One database conversation for work that is not a request's own."""
+    state = app.state
+    if state.sessions is None:
+        state.sessions = session_factory(get_engine(state.settings))
+    async with state.sessions() as session:
+        yield Store(session)
+
+
 def create_app(settings: Settings, decisions: Decisions | None = None) -> FastAPI:
     """Build the API. The interactive docs pages are off: they would be
     endpoints without login."""
@@ -87,11 +99,14 @@ def create_app(settings: Settings, decisions: Decisions | None = None) -> FastAP
     # `decisions.yaml` raises here: the app does not start without its limits.
     app.state.decisions = decisions if decisions is not None else load_decisions()
     app.state.risk = RiskEngine(app.state.decisions.risk)
-    # Where the account's value comes from. Until the paper account exists
-    # (stage 7) it is the starting balance from `decisions.yaml`.
-    paper_cash = app.state.decisions.shadow.starting_equity_usdt
-    app.state.account = lambda: starting_account(paper_cash)
-    app.state.account_source = "paper starting balance (no trades yet)"
+    # The paper account: pretend money in the database, traded against the
+    # live prices, every order through the risk engine above.
+    app.state.paper = PaperTrading(
+        app.state.decisions,
+        app.state.risk,
+        market=lambda: app.state.market,
+        open_store=lambda: _open_store(app),
+    )
     # Off until `server.py` has seen the Claude API check pass at startup.
     # This is only the startup result: the trading loop (Day 3) keeps its own
     # live switch in the risk engine and must not rely on this alone.
@@ -109,6 +124,9 @@ def create_app(settings: Settings, decisions: Decisions | None = None) -> FastAP
 
     register_error_handlers(app)
     app.include_router(api_router)
+    if settings.is_development:
+        # The test order exists in development only: elsewhere it is a 404.
+        app.include_router(dev_trading_router, prefix=API_PREFIX)
     return app
 
 

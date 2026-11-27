@@ -22,6 +22,7 @@ GOOD: dict[str, Any] = {
         "max_positions_per_symbol": 1,
         "max_orders_per_minute": 8,
     },
+    "fees": {"taker_pct": "0.001"},
     "shadow": {"starting_equity_usdt": "300"},
 }
 
@@ -41,6 +42,7 @@ def test_the_real_file_holds_the_owners_decisions() -> None:
     assert decisions.risk.max_positions_per_symbol == 1
     assert decisions.risk.max_orders_per_minute == 8
     assert decisions.shadow.starting_equity_usdt == Decimal("300")
+    assert decisions.fees.taker_pct == Decimal("0.001")
 
 
 def test_numbers_are_exact_decimals() -> None:
@@ -75,6 +77,9 @@ def test_limits_cannot_be_changed_while_the_app_runs() -> None:
         ("risk", "max_positions_per_symbol", 2, "from 1 to 1"),
         ("risk", "max_orders_per_minute", 0, "from 1 to 60"),
         ("risk", "max_orders_per_minute", 61, "from 1 to 60"),
+        ("fees", "taker_pct", 0.001, "in quotes"),
+        ("fees", "taker_pct", "0", "above 0"),
+        ("fees", "taker_pct", "0.011", "at most 0.01"),
         ("shadow", "starting_equity_usdt", 300, "in quotes"),
         ("shadow", "starting_equity_usdt", "0", "above 0"),
         ("shadow", "starting_equity_usdt", "1000000", "at most 100000"),
@@ -162,6 +167,8 @@ risk:
   max_open_positions: 3
   max_positions_per_symbol: 1
   max_orders_per_minute: 8
+fees:
+  taker_pct: "0.001"
 shadow:
   starting_equity_usdt: "300"
 """

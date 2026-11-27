@@ -19,3 +19,6 @@ CLAUDE.local.md
 
 # recorded price streams (test data, large)
 recordings/
+
+# downloaded past prices for the backtest (large, re-downloadable)
+history/

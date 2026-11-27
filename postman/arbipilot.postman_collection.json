@@ -2741,7 +2741,7 @@
                 "risk"
               ]
             },
-            "description": "The limits from decisions.yaml and how much of each is used right now. 0.08 means 8% of the account per trade; 0.02 means new trades stop after losing 2% in one UTC day. Until the paper account exists (stage 7) the account value shown is the 300 USDT starting balance."
+            "description": "The limits from decisions.yaml and how much of each is used right now, for the paper account. 0.08 means 8% of the account per trade; 0.02 means new trades stop after losing 2% in one UTC day. Money is text with 8 decimals."
           },
           "response": [
             {
@@ -2769,7 +2769,369 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"limits\": {\n    \"max_position_pct_equity\": \"0.08\",\n    \"daily_loss_pause_pct\": \"0.02\",\n    \"max_open_positions\": 3,\n    \"max_positions_per_symbol\": 1,\n    \"max_orders_per_minute\": 8\n  },\n  \"usage\": {\n    \"equity\": \"300\",\n    \"equity_source\": \"paper starting balance (no trades yet)\",\n    \"max_position_value\": \"24.00\",\n    \"day\": \"2026-11-27\",\n    \"day_start_equity\": \"300\",\n    \"day_profit_or_loss\": \"0\",\n    \"daily_loss_limit_value\": \"6.00\",\n    \"entries_paused\": false,\n    \"pause_reason\": \"\",\n    \"open_positions\": 0,\n    \"orders_last_minute\": 0\n  }\n}"
+              "body": "{\n  \"limits\": {\n    \"max_position_pct_equity\": \"0.08\",\n    \"daily_loss_pause_pct\": \"0.02\",\n    \"max_open_positions\": 3,\n    \"max_positions_per_symbol\": 1,\n    \"max_orders_per_minute\": 8\n  },\n  \"usage\": {\n    \"equity\": \"300.00000000\",\n    \"equity_source\": \"paper account\",\n    \"max_position_value\": \"24.00000000\",\n    \"day\": \"2026-11-27\",\n    \"day_start_equity\": \"300.00000000\",\n    \"day_profit_or_loss\": \"0.00000000\",\n    \"daily_loss_limit_value\": \"6.00000000\",\n    \"entries_paused\": false,\n    \"pause_reason\": \"\",\n    \"open_positions\": 0,\n    \"orders_last_minute\": 0\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Positions - my paper account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('It is the paper account', function () {",
+                  "    pm.expect(pm.response.json().source).to.eql('paper account');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/trading/positions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trading",
+                "positions"
+              ]
+            },
+            "description": "The pretend wallet: free cash, what is held and what it is worth now. It starts at 300 USDT and is kept in the database."
+          },
+          "response": [
+            {
+              "name": "200 - one position",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/trading/positions",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "trading",
+                    "positions"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"source\": \"paper account\",\n  \"cash\": \"276.01763759\",\n  \"equity\": \"299.97603759\",\n  \"prices_stale\": false,\n  \"positions\": [\n    {\n      \"symbol\": \"BTCUSDT\",\n      \"quantity\": \"0.00040000\",\n      \"cost\": \"23.98236241\",\n      \"price\": \"59896.00000000\",\n      \"price_stale\": false,\n      \"value\": \"23.95840000\",\n      \"profit_or_loss\": \"-0.02396241\",\n      \"opened_at\": \"2026-11-27T10:00:00Z\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Fills - my pretend buys and sells",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('It is a list', function () {",
+                  "    pm.expect(pm.response.json().fills).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/trading/fills?limit=10&offset=0",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trading",
+                "fills"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Every pretend buy and sell, newest first. limit is 1 to 200."
+          },
+          "response": [
+            {
+              "name": "200 - one fill",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/trading/fills?limit=10&offset=0",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "trading",
+                    "fills"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"limit\": 10,\n  \"offset\": 0,\n  \"fills\": [\n    {\n      \"id\": \"0d0c4a53-5f0e-4b43-9a55-0c0f6a1f7a11\",\n      \"client_order_id\": \"6a3f0a0e-7f0f-4a61-8a0b-2f4f6e5d1c22\",\n      \"symbol\": \"BTCUSDT\",\n      \"side\": \"BUY\",\n      \"quantity\": \"0.00040000\",\n      \"price\": \"59896.01000000\",\n      \"notional\": \"23.95840400\",\n      \"fee\": \"0.02395841\",\n      \"realized_pnl\": null,\n      \"cash_after\": \"276.01763759\",\n      \"risk_outcome\": \"reduced\",\n      \"risk_code\": \"position_cap\",\n      \"created_at\": \"2026-11-27T10:00:00Z\"\n    }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Test order - pretend BUY (development only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('The risk engine answered', function () {",
+                  "    pm.expect(pm.response.json().outcome).to.be.oneOf(['approved', 'reduced', 'rejected']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/trading/orders/test",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trading",
+                "orders",
+                "test"
+              ]
+            },
+            "description": "One pretend order through the risk engine, filled at the live price on the paper account. No real order is sent. With no size it buys as much as the limits allow (8% of the account).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"BTCUSDT\",\n  \"side\": \"BUY\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 - bought, cut to the 8% cap",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/trading/orders/test",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "trading",
+                    "orders",
+                    "test"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"symbol\": \"BTCUSDT\",\n  \"side\": \"BUY\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"outcome\": \"reduced\",\n  \"code\": \"position_cap\",\n  \"reason\": \"Cut to 8% of the account.\",\n  \"fill\": {\n    \"id\": \"0d0c4a53-5f0e-4b43-9a55-0c0f6a1f7a11\",\n    \"client_order_id\": \"6a3f0a0e-7f0f-4a61-8a0b-2f4f6e5d1c22\",\n    \"symbol\": \"BTCUSDT\",\n    \"side\": \"BUY\",\n    \"quantity\": \"0.00040000\",\n    \"price\": \"59896.01000000\",\n    \"notional\": \"23.95840400\",\n    \"fee\": \"0.02395841\",\n    \"realized_pnl\": null,\n    \"cash_after\": \"276.01763759\",\n    \"risk_outcome\": \"reduced\",\n    \"risk_code\": \"position_cap\",\n    \"created_at\": \"2026-11-27T10:00:00Z\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Test order - pretend SELL everything (development only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('The risk engine answered', function () {",
+                  "    pm.expect(pm.response.json().outcome).to.be.oneOf(['approved', 'reduced', 'rejected']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/trading/orders/test",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trading",
+                "orders",
+                "test"
+              ]
+            },
+            "description": "Sells everything held of the pair on the paper account. When nothing is held the answer is rejected / nothing_to_sell.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"BTCUSDT\",\n  \"side\": \"SELL\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 - nothing held",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/trading/orders/test",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "trading",
+                    "orders",
+                    "test"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"symbol\": \"BTCUSDT\",\n  \"side\": \"SELL\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"outcome\": \"rejected\",\n  \"code\": \"nothing_to_sell\",\n  \"reason\": \"Nothing of this pair is held.\",\n  \"fill\": null\n}"
             }
           ]
         }

@@ -142,13 +142,188 @@ Claude Code updates this table when a gate is passed, with the date.
 - **Needs first:** owner action 0 (`OBJECTIVES.md` defines the strategy).
 - **Gate:** replaying a recorded stream produces the same signals and fills every time; the owner sees signals listed in Postman and the fee on a sample trade matches a hand calculation (a $24 trade pays $0.018 per side).
 - **Carried over from stage 6 (must be handled here):**
-  - Store the day's starting equity and the daily-loss pause in the database, so a restart cannot forget a pause (today they are in memory).
-  - Replace the paper starting balance behind `GET /trading/risk` with the real paper account (cash, positions, entry orders waiting).
+  - DONE 2026-11-27: the day's starting equity and both pauses are stored in the `risk_state` table and given back to the engine after a restart.
+  - DONE 2026-11-27 (cash and positions; waiting orders do not exist yet): `GET /trading/risk` reads the real paper account, kept in the database (`paper_account`, `paper_positions`, `paper_fills`, migration 0003).
   - The strategy and the watched pairs still need the owner's word: `OBJECTIVES.md`, or his answers in the session.
   - Build a new account snapshot for every order, with entry orders still waiting in `pending_entries` and exit orders still waiting in `Position.reserved`. The engine does not remember what it approved.
   - Call the engine on every change of the account's value, not only on orders, so the daily loss is always seen.
   - Alert when an exit is refused because the pair's rules are not loaded; consider keeping the last known rules across a restart.
   - Stage 8: the kill switch calls `RiskEngine.pause()` and `resume()`, and its state is stored so a restart stays paused. Consider a generous, alerting limit on sell orders per minute.
+- **Shared parts built 2026-11-27 (no strategy yet):** fee maths (`trading/fees.py`, rate `fees.taker_pct` in `decisions.yaml`, 0.1% until the owner confirms his rate), at-once paper fills (`trading/paper.py`), the paper account service (`services/paper_service.py`), and `GET /trading/positions`, `GET /trading/fills`, `POST /trading/orders/test` (development only).
+- **Shared parts approved by the owner on 2026-11-27:** he ran positions, fills, the test order (buy, second buy refused, sell) and the restart test in Postman against development; all matched. This is not the stage 7 gate: the strategy and `GET /signals` are still open.
+- **Left open by the reviews of the shared parts (must be handled where named):**
+  - Stage 7, with the strategy: the trade-through rule and the delay for waiting orders are not modelled; today's fills are at-once only, so they must not be read as honest shadow results.
+  - Stage 8: the kill switch must write its pause to `risk_state` in the same step (today a pause is written at the next piece of work), and the saved risk state must be restored at startup, before the trading loop, not at the first `/trading` request.
+  - Order router: the caller supplies `client_order_id` so a retry cannot repeat an order (paper orders make their own); read the real `commission` and `commissionAsset` (Binance takes a buy's fee from the coin received unless fees are paid in BNB, so the real holding is slightly smaller than the paper one).
+  - Real account: the single risk engine is fed the paper account's value; it must not also be fed a real account.
+  - Next migration: cheap checks `cash >= 0`, `notional >= 0`, `cash_after >= 0`, `day_start_equity >= 0`. Migration 0003's downgrade deletes the paper record: owner's approval needed, even in development.
+  - One app process only: the paper account's lock is per process.
+
+#### Stage 7a: the backtest, and its rules fixed before any result (owner decision 2026-11-27)
+
+The owner does not have `OBJECTIVES.md`. In the session of 2026-11-27 he chose the strategy "buy the dip, with Claude as the judge" and decided that it must pass a backtest before anything else of stage 7 is built. Everything below was written and committed **before** the backtest was run. Nothing in this section may be changed after a result has been seen.
+
+**The strategy tested (plain rules only; Claude cannot be backtested honestly, because it may know past prices).**
+
+- Pairs: BTCUSDT, ETHUSDT, BNBUSDT. One-minute candles. Long only.
+- *Dip:* at the close of a minute, the close is at least `K` standard deviations below the average of the last 60 closes (that minute included; standard deviation of those same 60 closes).
+- *Dip distance* `d` = (average − close) ÷ average.
+- *Entry:* a waiting buy order at that close price, placed in the next minute, alive for 2 minutes. It fills only if a minute's low is **below** the price. Otherwise it is cancelled.
+- *Target:* entry × (1 + `T` × `d`), a waiting sell. It fills only if a minute's high is **above** it, and never in the minute the buy filled.
+- *Stop:* entry × (1 − `S` × `d`), an immediate sell when a minute's low touches it, also in the minute the buy filled. When a minute hits both the stop and the target, the stop counts. If the minute opens below the stop, the sale is at the open.
+- *Time limit:* 120 minutes after the buy filled, an immediate sell at that minute's close.
+- *Costs:* a fee on each side, and every immediate sell is assumed to fill 0.05% worse than its price.
+- *Target floor:* no trade when `T` × `d` is under 0.45% (three times the round-trip fee).
+- *One bet:* one trade per pair. When the other two pairs are, at that same minute, at least 2 standard deviations below their own averages, at most one trade or waiting order may exist over all pairs.
+- *Pause:* after any trade that ends with a loss, no new order on any pair for 30 minutes.
+- *No peeking:* every decision uses only minutes that had closed. A test changes the future and checks that no earlier decision changes.
+- Not modelled: the account's size changing, and the daily-loss pause. The result is the average profit per trade as a share of the trade's size.
+
+**Small print, also fixed before the first run** (points the code review asked to have written down):
+
+- "A loss", for the 30-minute pause, means the trade lost money after fees at the 0.075% fee.
+- A missing minute in the archive restarts the 60-minute average: no dip is seen until 60 unbroken minutes exist again, and such a pair counts as "not dipping" for the one-bet rule. A missing minute fills no order and ends no trade.
+- When two pairs dip in the same minute, they are handled in the order BTCUSDT, ETHUSDT, BNBUSDT.
+- A trade still open when the data ends is not counted. The tuning run does not read any minute of the hidden period.
+- If two combinations tie exactly in the tuning period, the one listed first (smaller `K`, then smaller `T`, then smaller `S`) is kept.
+- The result of the hidden run is written to `docs/backtest-hidden-result.txt` and committed. The run refuses to start when that file exists.
+
+**The dials: 12 combinations, no more.**
+
+| Dial | Values |
+|---|---|
+| `K`, dip size in standard deviations | 2, 3, 4 |
+| `T`, target as a share of the dip distance | 0.5 (half back), 1 (fully back) |
+| `S`, stop as a multiple of the dip distance | 1, 2 |
+
+**The data.** Three years of one-minute candles from Binance's public archive (`data.binance.vision`, personal backtesting only under its terms): November 2023 to October 2026.
+
+- *Tuning period:* November 2023 to October 2025. The 12 combinations are compared here only.
+- *Hidden period:* November 2025 to October 2026. Run **once**, with one combination.
+
+**The procedure.**
+
+1. Run the 12 combinations on the tuning period. Keep the one with the highest average profit per trade at the 0.075% fee, among those with at least 200 trades.
+2. If no combination has at least 200 trades and a positive average there, the strategy has failed. The hidden period is not run.
+3. Otherwise run that one combination on the hidden period, once.
+
+**The pass mark, on the hidden period. All three must hold.**
+
+- At least 100 trades.
+- Average profit per trade of at least +0.05% of the trade's size, after fees and slippage, at the 0.075% fee.
+- Average profit per trade not negative at the 0.1% fee.
+
+The win rate is reported and decides nothing.
+
+**After the result.** A fail means this strategy is not built and not traded, and it is not retuned on these three years. A new idea needs a new hidden period. A pass means the rest of stage 7 is built for the chosen combination, and it must still prove itself in paper trading: one-minute candles cannot show what happens inside a minute.
+
+**Result (2026-11-27, run after commit `b8f7ca4`): FAILED at step 2.** On the tuning period (November 2023 to October 2025; BTC +216%, ETH +112%, BNB +381%; no minute missing) every one of the 12 combinations lost money per trade after fees. The hidden period was not run and stays unseen.
+
+| Combination | Trades | Average per trade at 0.075% | at 0.1% | Wins |
+|---|---|---|---|---|
+| K=2 half, stop 1x | 2443 | −0.148% | −0.198% | 65.1% |
+| K=2 half, stop 2x | 2498 | −0.130% | −0.180% | 72.1% |
+| K=2 full, stop 1x | 6969 | −0.196% | −0.246% | 45.8% |
+| K=2 full, stop 2x | 6921 | −0.179% | −0.229% | 55.8% |
+| K=3 half, stop 1x | 1190 | −0.162% | −0.212% | 63.8% |
+| K=3 half, stop 2x | 1170 | −0.138% | −0.188% | 70.4% |
+| K=3 full, stop 1x | 3016 | −0.189% | −0.239% | 45.5% |
+| K=3 full, stop 2x | 2922 | −0.181% | −0.231% | 53.5% |
+| K=4 half, stop 1x | 371 | −0.145% | −0.195% | 61.5% |
+| K=4 half, stop 2x | 368 | −0.083% | −0.133% | 69.3% |
+| K=4 full, stop 1x | 770 | −0.149% | −0.199% | 46.6% |
+| K=4 full, stop 2x | 757 | −0.117% | −0.167% | 53.8% |
+
+By the rule above, this strategy is not built and not traded, and it is not retuned on these years. Reproduce with `python scripts/backtest_download.py` then `python scripts/backtest_run.py tuning`.
+
+#### Stage 7b: the trend test, and its rules fixed before any result (owner decision 2026-11-27)
+
+After the dip strategy failed, the owner chose to test "following the trend" as plain rules, with no Claude judge. Everything below was written and committed **before** the test was run, and nothing in it may be changed after a result has been seen. This is idea 1 of at most 3 that may be checked against this hidden period; after three, a fresh hidden period is needed.
+
+**The rules, the same for every combination.**
+
+- Pairs: BTCUSDT, ETHUSDT, BNBUSDT. Daily candles; a day runs from 00:00 to 24:00 UTC. Long only. One trade per pair at a time; the pairs do not affect each other.
+- *Buy signal:* at the close of day D, the pair has no trade, and D's close is **above** the highest close of the `N` days before D (D itself not included).
+- *Sell signal:* at the close of day D, the pair has a trade, and D's close is **below** the lowest close of the `M` days before D (D itself not included).
+- *Orders:* a signal at the close of day D becomes an immediate order at the **opening price of day D+1**. Nothing is ever bought or sold at the price that made the signal.
+- *Size:* 24 USDT per trade (8% of 300 USDT), the same for every trade. Profits are not re-invested.
+- *Costs:* every order fills 0.05% worse than the opening price, and pays a fee of 0.1%. The result is also reported at a 0.075% fee, which decides nothing.
+- *End of a period:* a trade still open on the last day is sold at that day's close, with the same costs. Each period starts with no trade open.
+- *No peeking:* a decision at the close of day D uses only closes up to D. A test changes later days and checks that no earlier decision changes.
+- *Missing days:* a signal needs every one of its `N` (or `M`) earlier days to exist. (The downloaded data has no missing day.)
+- Not modelled: the daily-loss pause, and Claude.
+
+**The four combinations, each written out in full.**
+
+1. `N`=20, `M`=10: buy at the next day's open after a close above the highest close of the previous 20 days; sell at the next day's open after a close below the lowest close of the previous 10 days.
+2. `N`=20, `M`=20: buy at the next day's open after a close above the highest close of the previous 20 days; sell at the next day's open after a close below the lowest close of the previous 20 days.
+3. `N`=55, `M`=10: buy at the next day's open after a close above the highest close of the previous 55 days; sell at the next day's open after a close below the lowest close of the previous 10 days.
+4. `N`=55, `M`=20: buy at the next day's open after a close above the highest close of the previous 55 days; sell at the next day's open after a close below the lowest close of the previous 20 days.
+
+**The data.** Daily candles from Binance's public archive, from November 2017 (BNBUSDT's first day is 6 November 2017).
+
+- *Choosing period:* 1 January 2018 to 31 October 2022. It starts on 1 January 2018 and not in November 2017 because BNBUSDT needs 55 earlier days before its first signal. November and December 2017 are used only as those earlier days.
+- *Hidden period:* 1 November 2022 to 31 October 2026. Earlier days are used only as the `N` and `M` days before a signal.
+
+**Buy-and-hold, the thing to beat: same money, same dates, same costs.** On the first day of the period, 24 USDT of each pair is bought at that day's opening price, 0.05% worse, with the 0.1% fee. On the last day it is sold at that day's close, 0.05% worse, with the 0.1% fee. Its profit is what comes back minus the 72 USDT.
+
+**Worst drop, measured the same way for both.** Each has 72 USDT on the first day. Every day at the close its money is counted: for buy-and-hold, the value of the three holdings; for the bot, 72 USDT plus the profit of finished trades plus the gain or loss of open ones at that close. The worst drop is the largest fall from an earlier high, as a share of that high.
+
+**The procedure.**
+
+1. Run the four combinations on the choosing period. Keep the one with the highest total profit in USDT at the 0.1% fee, among those with at least 20 trades and a profit above zero. On an exact tie, the one listed first.
+2. If none has at least 20 trades and a profit above zero, the idea has failed. The hidden period is not run.
+3. Otherwise run that one combination on the hidden period, **once**. The result is written to `docs/trend-hidden-result.txt` and committed; the run refuses to start when that file exists.
+
+**The pass mark, on the hidden period, at the 0.1% fee. All four must hold.**
+
+- (a) At least 20 trades.
+- (b) The bot's total profit is above zero.
+- (c) One of these two:
+  - the bot's profit is at least buy-and-hold's profit; or
+  - the bot's profit is at least 50% of buy-and-hold's profit **and** the bot's worst drop is at most 50% of buy-and-hold's worst drop.
+- (d) The bot's total profit with its single best trade taken away is still above zero.
+
+**Checked before the run (the owner's condition): the hidden period contains a real fall.** Measured on 2026-11-27 from the downloaded prices, with no strategy run. These numbers were looked at **after** the pass mark above was proposed, and the pass mark was not changed.
+
+| Buy-and-hold | Choosing period | Hidden period |
+|---|---|---|
+| BTCUSDT | +49%, worst drop 81% | +279%, worst drop 53% (6 Oct 2025 to 30 Jun 2026) |
+| ETHUSDT | +115%, worst drop 94% | +43%, worst drop 68% (22 Aug 2025 to 25 Jun 2026) |
+| BNBUSDT | +3710%, worst drop 80% | +116%, worst drop 58% (8 Oct 2025 to 30 Jun 2026) |
+| The three together | +1291%, worst drop 84% | +146%, worst drop 57% (8 Oct 2025 to 30 Jun 2026) |
+
+(These are before costs and from the first day's open; the test computes buy-and-hold exactly, with costs.) So in the hidden period the bot must earn at least as much as buy-and-hold, or at least half of it with a worst drop of at most half of buy-and-hold's.
+
+**After the result.** A fail means this idea is not built and not traded, and it is not retuned on these years. A pass means it is built on plain rules and must then run on paper for some weeks, which proves the machinery (orders, saving, restarts) and not the profit. No real money before both.
+
+**Result of step 1, the choosing period (2026-11-27, run after commit `aa05be6`).** 72 USDT, 1 January 2018 to 31 October 2022, at the 0.1% fee. No day is missing from the data.
+
+| | Trades | Wins | Profit | Worst drop | Profit without the best trade |
+|---|---|---|---|---|---|
+| Buy-and-hold | 3 | 3 | +926.83 USDT | 84.0% | — |
+| 1. `N`=20, `M`=10 | 102 | 53 | +355.21 USDT | 48.9% | +200.63 USDT |
+| 2. `N`=20, `M`=20 | 69 | 36 | +617.24 USDT | 57.2% | +273.32 USDT |
+| 3. `N`=55, `M`=10 | 67 | 32 | +284.10 USDT | 38.6% | +134.76 USDT |
+| 4. `N`=55, `M`=20 | 44 | 26 | +515.23 USDT | 44.1% | +182.08 USDT |
+
+**Chosen for the hidden period: combination 2 (`N`=20, `M`=20).** Noted before the hidden run: on the choosing period itself this combination would not have met condition (c), because it earned less than buy-and-hold and its worst drop (57.2%) is more than half of buy-and-hold's (84.0%). The hidden period is still unseen.
+
+**Result of step 3, the hidden period (2026-11-27, run once, after commit `7deb2db`): FAILED on condition (c).** 72 USDT, 1 November 2022 to 31 October 2026, at the 0.1% fee. The full output is in `docs/trend-hidden-result.txt`.
+
+| | Trades | Wins | Profit | Worst drop | Profit without the best trade |
+|---|---|---|---|---|---|
+| Buy-and-hold | 3 | 3 | +104.62 USDT | 57.1% | — |
+| Combination 2 (`N`=20, `M`=20) | 72 | 29 | +62.53 USDT | 31.3% | +46.23 USDT |
+
+By pair: BTCUSDT 25 trades, +28.96 USDT; ETHUSDT 24 trades, +17.56 USDT; BNBUSDT 23 trades, +16.01 USDT.
+
+- (a) at least 20 trades: yes (72).
+- (b) profit above zero: yes.
+- (c) at least buy-and-hold's profit, or half of it with half the drop: **no**. The profit (62.53) is more than half of buy-and-hold's (52.31 needed), but the worst drop (31.3%) is more than half of buy-and-hold's (28.6% allowed).
+- (d) profit above zero without the best trade: yes.
+
+By the rule above, this idea is not built and not traded, and it is not retuned on these years. The hidden period has now been used for 1 of at most 3 ideas.
 
 ### Stage 8: Order path and the kill switch
 
@@ -179,6 +354,11 @@ Claude Code updates this table when a gate is passed, with the date.
 - **Example:** `GET /performance/summary` shows profit per trade after fees, win rate and drawdown, next to "just held USDT" and "just held BTC".
 - **Endpoints:** `GET /trades`, `/trades/{id}`, `/positions`, `/performance/summary`, `/performance/daily`, `/system/config`, `/system/events`.
 - **Gate:** the owner picks one trade in Postman and checks its entry, exit, fees, AI verdict and risk decision against pgAdmin; the summary matches a hand calculation on a small set of trades.
+- **Added by the owner on 2026-11-27 (built here, because both need the scoreboard's numbers and stage 9's AI budget):**
+  - **Daily report on Telegram, in simple words.** Once a day: the day's trades, the day's profit or loss after fees, what the account is worth, the result since the start next to "just held", whether anything is paused, and whether the machine is healthy. The numbers come from the scoreboard, never from the AI's memory; the AI only words them. When the AI is unavailable or over budget, a plain fixed-format report is sent instead.
+  - **Chat with the bot on Telegram.** The owner asks a question and Claude answers from the real records, through a few read-only tools given to it directly (wallet, positions, fills and trades, daily results, risk state, events). No MCP server for now: the bot is our own program, so direct tools do the same with fewer parts; MCP can be added later if the owner wants to ask from the Claude app.
+  - **Safety rules for both:** only the owner's Telegram account is answered, everyone else is ignored; the chat is read-only and has no tool that places, cancels or changes an order, changes a limit, or changes the trading mode; no secret is ever sent; every call counts against the AI daily budget, with its own cap so chatting can never use up the judge's budget; text coming from Telegram is treated as a question, never as an instruction to the app. It explains what happened; it does not predict prices.
+  - **Gate for these:** the owner receives a daily report and checks two of its numbers against `GET /performance/daily`; he asks one question about a real trade and checks the answer against Postman; a message from another Telegram account gets no answer; a test shows the chat has no tool that changes anything.
 
 ### Stage 11: Testnet run
 

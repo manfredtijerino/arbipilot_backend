@@ -1,8 +1,9 @@
-"""One short conversation with the database: the three login repositories
-sharing a session, saved together by `commit()`."""
+"""One short conversation with the database: every repository sharing one
+session, saved together by `commit()`."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from database.repositories.paper_repository import PaperRepository
 from database.repositories.password_reset_code_repository import (
     PasswordResetCodeRepository,
 )
@@ -16,6 +17,7 @@ class Store:
         self.users = UserRepository(session)
         self.tokens = RefreshTokenRepository(session)
         self.codes = PasswordResetCodeRepository(session)
+        self.paper = PaperRepository(session)
 
     async def commit(self) -> None:
         """Save everything done so far. Without it, nothing is kept."""

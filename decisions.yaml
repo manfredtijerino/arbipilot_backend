@@ -27,6 +27,13 @@ risk:
   # orders in any 60 seconds.
   max_orders_per_minute: 8
 
+fees:
+  # What Binance charges on an order that fills at once, as a share of the
+  # order's value. "0.001" = 0.1%: 2.4 cents on a 24 USDT order. It is 0.075%
+  # ("0.00075") only when the account pays its fees in BNB. Set to the
+  # cautious 0.1% on 2026-11-27 until the owner confirms which applies.
+  taker_pct: "0.001"
+
 shadow:
   # Pretend money the paper account starts with, in USDT.
   starting_equity_usdt: "300"

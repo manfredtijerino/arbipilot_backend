@@ -1,0 +1,19 @@
+CHOOSING PERIOD 2018-01-01 to 2022-10-31 (72 USDT, 24 per pair)
+buy-and-hold                     trades=3    wins=3    profit@0.1%=+926.83 USDT    profit@0.075%=+927.33 USDT    worst drop=84.0%  without best=+39.09 USDT  (sold at period end: 3)
+buy>20d high, sell<10d low       trades=102  wins=53   profit@0.1%=+355.21 USDT    profit@0.075%=+356.61 USDT    worst drop=48.9%  without best=+200.63 USDT  (sold at period end: 3)
+buy>20d high, sell<20d low       trades=69   wins=36   profit@0.1%=+617.24 USDT    profit@0.075%=+618.38 USDT    worst drop=57.2%  without best=+273.32 USDT  (sold at period end: 3)
+buy>55d high, sell<10d low       trades=67   wins=32   profit@0.1%=+284.10 USDT    profit@0.075%=+285.05 USDT    worst drop=38.6%  without best=+134.76 USDT  (sold at period end: 1)
+buy>55d high, sell<20d low       trades=44   wins=26   profit@0.1%=+515.23 USDT    profit@0.075%=+516.02 USDT    worst drop=44.1%  without best=+182.08 USDT  (sold at period end: 1)
+chosen: buy>20d high, sell<20d low
+
+HIDDEN PERIOD 2022-11-01 to 2026-10-31 (run once; 72 USDT, 24 per pair)
+buy-and-hold                     trades=3    wins=3    profit@0.1%=+104.62 USDT    profit@0.075%=+104.71 USDT    worst drop=57.1%  without best=+38.02 USDT  (sold at period end: 3)
+buy>20d high, sell<20d low       trades=72   wins=29   profit@0.1%=+62.53 USDT     profit@0.075%=+63.42 USDT     worst drop=31.3%  without best=+46.23 USDT  (sold at period end: 0)
+  BTCUSDT: 25 trades, +28.96 USDT
+  ETHUSDT: 24 trades, +17.56 USDT
+  BNBUSDT: 23 trades, +16.01 USDT
+(a) at least 20 trades: yes
+(b) profit above zero: yes
+(c) at least hold's profit, or half of it with half the drop: NO
+(d) profit above zero without the best trade: yes
+RESULT: FAIL

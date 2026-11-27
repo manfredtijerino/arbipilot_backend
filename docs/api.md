@@ -410,9 +410,11 @@ Errors: `404` `unknown_symbol` (not on the watch list), `422` (not a pair name),
 |---|---|---|---|---|---|
 | GET | `/trading/status` | Yes | No | Environment, mode, running or paused (and why), open positions, today's profit or loss. | Planned |
 | GET | `/trading/risk` | Yes | No | The current limits from `decisions.yaml` and how much of each is used today. | **Built** |
+| GET | `/trading/positions` | Yes | No | The paper account: free cash, what is held, and what it is worth now. | **Built** |
+| GET | `/trading/fills` | Yes | No | The pretend buys and sells, newest first (`limit`, `offset`). | **Built** |
 | POST | `/trading/kill` | Yes | No | Pauses trading and cancels open orders. | Planned |
 | POST | `/trading/resume` | Yes | No | Resumes trading after a pause. | Planned |
-| POST | `/trading/orders/test` | Yes | **Yes** | Sends one test order through the full path (risk engine, router, fill) in shadow or testnet. | Planned |
+| POST | `/trading/orders/test` | Yes | **Yes** | One pretend order through the risk engine, filled at once on the paper account at the live price. No real order is sent. (The order router joins this path in a later stage.) | **Built** |
 
 ### `GET /trading/risk`
 
@@ -428,13 +430,13 @@ The owner's limits, and how much of each is used right now. Money and shares are
     "max_orders_per_minute": 8
   },
   "usage": {
-    "equity": "300",
-    "equity_source": "paper starting balance (no trades yet)",
-    "max_position_value": "24.00",
+    "equity": "300.00000000",
+    "equity_source": "paper account",
+    "max_position_value": "24.00000000",
     "day": "2026-11-27",
-    "day_start_equity": "300",
-    "day_profit_or_loss": "0",
-    "daily_loss_limit_value": "6.00",
+    "day_start_equity": "300.00000000",
+    "day_profit_or_loss": "0.00000000",
+    "daily_loss_limit_value": "6.00000000",
     "entries_paused": false,
     "pause_reason": "",
     "open_positions": 0,
@@ -451,16 +453,110 @@ The owner's limits, and how much of each is used right now. Money and shares are
 | `limits.max_positions_per_symbol` | How many trades may be open at once in one pair. |
 | `limits.max_orders_per_minute` | At most this many orders in any 60 seconds (a guard against a runaway bug). |
 | `usage.equity` | What the account is worth now: cash plus coins held. |
-| `usage.equity_source` | Where that value comes from. Until stage 7 it is the paper starting balance. |
+| `usage.equity_source` | Where that value comes from: `"paper account"` (the pretend wallet kept in the database). |
 | `usage.max_position_value` | The biggest trade allowed right now: the share above times `equity`. |
 | `usage.day` / `usage.day_start_equity` | The UTC day being counted, and the account's value when it began. |
 | `usage.day_profit_or_loss` | Today's result. Negative is a loss. |
 | `usage.daily_loss_limit_value` | The loss at which new trades stop today. |
-| `usage.entries_paused` / `usage.pause_reason` | `true` once today's loss reached the limit, and why. Closing trades is still allowed. |
+| `usage.entries_paused` / `usage.pause_reason` | `true` once today's loss reached the limit, or while the account's value cannot be read (a held pair's price is missing or older than a few seconds), and why. Closing trades is still allowed. The pause survives a restart. |
 | `usage.open_positions` | Trades open now, including entry orders still waiting. |
 | `usage.orders_last_minute` | Orders approved in the last 60 seconds. |
 
-What the risk engine does with an order (used from stage 7 on): **approved**, **reduced** (cut to the position cap or to the free cash), or **rejected** with one of these codes: `trading_paused`, `unknown_symbol`, `rules_stale`, `pair_not_trading`, `price_unavailable`, `price_stale`, `no_equity`, `daily_loss_pause`, `position_exists`, `max_open_positions`, `order_rate_limit`, `below_minimum`, `invalid_order`, `nothing_to_sell`.
+Money in every `/trading` answer is text with 8 decimals.
+
+What the risk engine does with an order: **approved**, **reduced** (code `position_cap` or `cash`: cut to the position cap or to the free cash, fee included), or **rejected** with one of these codes: `trading_paused`, `unknown_symbol`, `rules_stale`, `pair_not_trading`, `price_unavailable`, `price_stale`, `no_equity`, `daily_loss_pause`, `position_exists`, `max_open_positions`, `order_rate_limit`, `below_minimum`, `invalid_order`, `nothing_to_sell`, `cash` (no free cash at all).
+
+### `GET /trading/positions`
+
+The paper account as it is now. It starts with the `shadow.starting_equity_usdt` from `decisions.yaml` (300 USDT) and is kept in the database, so it survives a restart.
+
+```json
+{
+  "source": "paper account",
+  "cash": "276.01763759",
+  "equity": "299.97603759",
+  "prices_stale": false,
+  "positions": [
+    {
+      "symbol": "BTCUSDT",
+      "quantity": "0.00040000",
+      "cost": "23.98236241",
+      "price": "59896.00000000",
+      "price_stale": false,
+      "value": "23.95840000",
+      "profit_or_loss": "-0.02396241",
+      "opened_at": "2026-11-27T10:00:00Z"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `cash` | Free USDT. |
+| `equity` | Cash plus what is held, valued at the best bid (what a sale would get). `null` when a held pair has no price at all. |
+| `prices_stale` | `true` when a held pair's price is missing or too old. The values shown are then the last known ones, and no new trade is opened until fresh prices arrive. |
+| `positions[].cost` | Everything paid for it, the buying fee included. |
+| `positions[].price` / `price_stale` | The last known best bid, and whether it is too old to act on. |
+| `positions[].value` / `profit_or_loss` | Quantity times that price, and value minus cost (before the selling fee). |
+
+### `GET /trading/fills`
+
+`?limit=` (1 to 200, default 50) and `?offset=` (default 0). Newest first. Answers `{"limit", "offset", "fills": [...]}`; each fill has the shape shown under the test order below.
+
+### `POST /trading/orders/test` (development only)
+
+One pretend order. It passes the risk engine like every order, then fills at once: a buy at the best ask, a sale at the best bid, with the fee `fees.taker_pct` from `decisions.yaml`. In production this address does not exist (404, with or without a token).
+
+```json
+{"symbol": "BTCUSDT", "side": "BUY", "amount_usdt": "24"}
+```
+
+| Field | Rule |
+|---|---|
+| `symbol` | Required. A watched pair, in capitals. |
+| `side` | Required. `"BUY"` or `"SELL"`. |
+| `quantity` | Optional, text. How many coins. |
+| `amount_usdt` | Optional, text, buys only. How many USDT to spend. Not together with `quantity`. |
+
+With no size, a buy asks for as much as the limits allow (8% of the account) and a sale sells everything held. A sale that would leave a rest too small for Binance to ever sell sells everything instead.
+
+```json
+{
+  "outcome": "reduced",
+  "code": "position_cap",
+  "reason": "Cut to 8% of the account.",
+  "fill": {
+    "id": "0d0c4a53-5f0e-4b43-9a55-0c0f6a1f7a11",
+    "client_order_id": "6a3f0a0e-7f0f-4a61-8a0b-2f4f6e5d1c22",
+    "symbol": "BTCUSDT",
+    "side": "BUY",
+    "quantity": "0.00040000",
+    "price": "59896.01000000",
+    "notional": "23.95840400",
+    "fee": "0.02395841",
+    "realized_pnl": null,
+    "cash_after": "276.01763759",
+    "risk_outcome": "reduced",
+    "risk_code": "position_cap",
+    "created_at": "2026-11-27T10:00:00Z"
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `outcome` / `code` / `reason` | What the risk engine said. A refusal is still a 200: the answer is "no", not an error. |
+| `fill` | The trade that was recorded, or `null` when nothing was traded. |
+| `fill.notional` | Quantity times price. |
+| `fill.fee` | The fee in USDT, rounded up. |
+| `fill.realized_pnl` | On a sale: what came in minus what that part had cost, both fees included. `null` on a buy. |
+| `fill.cash_after` | Free cash after this trade. |
+
+| Error code | Status | When |
+|---|---|---|
+| `invalid_input` | 422 | A field is missing or has the wrong shape (a negative amount, both sizes, a sale by amount). |
+| `database_unavailable` | 503 | The database could not be reached; nothing was recorded. |
 
 ## Data
 
