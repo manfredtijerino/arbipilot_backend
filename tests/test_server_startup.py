@@ -6,6 +6,7 @@ from collections.abc import Callable
 import pytest
 
 import server
+from config.decisions import DecisionsError
 from config.environment import GuardRailError
 from config.settings import Settings, SettingsError
 from services.integration_service import CheckResult
@@ -178,3 +179,19 @@ def test_an_unplanned_error_exits_1_without_a_traceback(
     captured = capsys.readouterr()
     assert "✖ Startup failed: unexpected error (RuntimeError)" in captured.out
     assert "test-key" not in captured.out + captured.err
+
+
+def test_unreadable_risk_limits_print_one_line_and_connect_to_nothing(
+    harness: _Harness,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def refuse() -> None:
+        raise DecisionsError("decisions.yaml: the key `risk` is written twice")
+
+    monkeypatch.setattr(server, "load_decisions", refuse)
+    assert server.main() == 1
+    assert capsys.readouterr().out.splitlines() == [
+        "✖ Startup refused: decisions.yaml: the key `risk` is written twice"
+    ]
+    assert harness.events == []

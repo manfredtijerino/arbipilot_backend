@@ -1,0 +1,32 @@
+# ArbiPilot risk limits. The owner decides every value in this file.
+#
+# Rules for this file:
+# - Never loosen a value without the owner's explicit approval.
+# - Write every number with a decimal point in quotes ("0.08"), so it is read
+#   exactly and never rounded.
+# - The app refuses to start when a value is missing, misspelt or absurd.
+#
+# Decided by the owner on 2026-11-27, for a starting capital of 300 USDT.
+
+risk:
+  # One trade may use at most this share of the account.
+  # "0.08" = 8%. With 300 USDT: 24 USDT per trade.
+  max_position_pct_equity: "0.08"
+
+  # After losing this share of the account in one UTC day, no new trade is
+  # opened until the next UTC day. "0.02" = 2%. With 300 USDT: 6 USDT.
+  daily_loss_pause_pct: "0.02"
+
+  # How many trades may be open at the same time, over all pairs.
+  max_open_positions: 3
+
+  # How many trades may be open at the same time in one pair.
+  max_positions_per_symbol: 1
+
+  # A guard against a bug that fires orders in a loop: at most this many
+  # orders in any 60 seconds.
+  max_orders_per_minute: 8
+
+shadow:
+  # Pretend money the paper account starts with, in USDT.
+  starting_equity_usdt: "300"

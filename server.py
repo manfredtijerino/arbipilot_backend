@@ -1,8 +1,9 @@
 """Where the app starts:  python server.py
 
 Order (docs/project-brief.md section 6):
-1. Read `.env` and apply the development/production guard rails. A problem
-   here prints one line and stops before anything connects.
+1. Read `.env` and apply the development/production guard rails, then read
+   the risk limits in `decisions.yaml`. A problem here prints one line and
+   stops before anything connects.
 2. Open the port, then check the database, Binance and the Claude API.
 3. Print the status lines. Each one is already true when it is printed.
 4. Stop with exit code 1 if the port, the database or Binance failed.
@@ -21,6 +22,7 @@ import sys
 import uvicorn
 
 from config.database import dispose_engine
+from config.decisions import Decisions, DecisionsError, load_decisions
 from config.environment import GuardRailError
 from config.logging import setup_logging
 from config.server import FAILED, StartupReport, bind_port, create_app
@@ -48,7 +50,7 @@ async def notify_owner(settings: Settings, report: StartupReport) -> None:
         logger.warning("startup message not sent to Telegram: %s", exc)
 
 
-async def run(settings: Settings) -> int:
+async def run(settings: Settings, decisions: Decisions | None = None) -> int:
     """Start the app. Returns the process exit code."""
     sock, port_error = open_port(settings)
     report = StartupReport(
@@ -66,7 +68,7 @@ async def run(settings: Settings) -> int:
         await dispose_engine()
         return 1
 
-    app = create_app(settings)
+    app = create_app(settings, decisions)
     app.state.new_entries_enabled = report.claude_ok
     app.state.background_work = True  # start the price stream with the server
     if not report.claude_ok:
@@ -81,13 +83,14 @@ async def run(settings: Settings) -> int:
 def main() -> int:
     try:
         settings = get_settings()
-    except (SettingsError, GuardRailError) as exc:
+        decisions = load_decisions()  # the risk limits; no limits, no start
+    except (SettingsError, GuardRailError, DecisionsError) as exc:
         # One clear line, then stop: nothing has connected yet.
         print(f"{FAILED} Startup refused: {exc}", flush=True)
         return 1
     setup_logging(settings)
     try:
-        return asyncio.run(run(settings))
+        return asyncio.run(run(settings, decisions))
     except KeyboardInterrupt:
         return 0
     except Exception as exc:
