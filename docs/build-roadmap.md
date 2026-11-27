@@ -150,6 +150,64 @@ Claude Code updates this table when a gate is passed, with the date.
   - Alert when an exit is refused because the pair's rules are not loaded; consider keeping the last known rules across a restart.
   - Stage 8: the kill switch calls `RiskEngine.pause()` and `resume()`, and its state is stored so a restart stays paused. Consider a generous, alerting limit on sell orders per minute.
 
+#### Stage 7a: the backtest, and its rules fixed before any result (owner decision 2026-11-27)
+
+The owner does not have `OBJECTIVES.md`. In the session of 2026-11-27 he chose the strategy "buy the dip, with Claude as the judge" and decided that it must pass a backtest before anything else of stage 7 is built. Everything below was written and committed **before** the backtest was run. Nothing in this section may be changed after a result has been seen.
+
+**The strategy tested (plain rules only; Claude cannot be backtested honestly, because it may know past prices).**
+
+- Pairs: BTCUSDT, ETHUSDT, BNBUSDT. One-minute candles. Long only.
+- *Dip:* at the close of a minute, the close is at least `K` standard deviations below the average of the last 60 closes (that minute included; standard deviation of those same 60 closes).
+- *Dip distance* `d` = (average − close) ÷ average.
+- *Entry:* a waiting buy order at that close price, placed in the next minute, alive for 2 minutes. It fills only if a minute's low is **below** the price. Otherwise it is cancelled.
+- *Target:* entry × (1 + `T` × `d`), a waiting sell. It fills only if a minute's high is **above** it, and never in the minute the buy filled.
+- *Stop:* entry × (1 − `S` × `d`), an immediate sell when a minute's low touches it, also in the minute the buy filled. When a minute hits both the stop and the target, the stop counts. If the minute opens below the stop, the sale is at the open.
+- *Time limit:* 120 minutes after the buy filled, an immediate sell at that minute's close.
+- *Costs:* a fee on each side, and every immediate sell is assumed to fill 0.05% worse than its price.
+- *Target floor:* no trade when `T` × `d` is under 0.45% (three times the round-trip fee).
+- *One bet:* one trade per pair. When the other two pairs are, at that same minute, at least 2 standard deviations below their own averages, at most one trade or waiting order may exist over all pairs.
+- *Pause:* after any trade that ends with a loss, no new order on any pair for 30 minutes.
+- *No peeking:* every decision uses only minutes that had closed. A test changes the future and checks that no earlier decision changes.
+- Not modelled: the account's size changing, and the daily-loss pause. The result is the average profit per trade as a share of the trade's size.
+
+**Small print, also fixed before the first run** (points the code review asked to have written down):
+
+- "A loss", for the 30-minute pause, means the trade lost money after fees at the 0.075% fee.
+- A missing minute in the archive restarts the 60-minute average: no dip is seen until 60 unbroken minutes exist again, and such a pair counts as "not dipping" for the one-bet rule. A missing minute fills no order and ends no trade.
+- When two pairs dip in the same minute, they are handled in the order BTCUSDT, ETHUSDT, BNBUSDT.
+- A trade still open when the data ends is not counted. The tuning run does not read any minute of the hidden period.
+- If two combinations tie exactly in the tuning period, the one listed first (smaller `K`, then smaller `T`, then smaller `S`) is kept.
+- The result of the hidden run is written to `docs/backtest-hidden-result.txt` and committed. The run refuses to start when that file exists.
+
+**The dials: 12 combinations, no more.**
+
+| Dial | Values |
+|---|---|
+| `K`, dip size in standard deviations | 2, 3, 4 |
+| `T`, target as a share of the dip distance | 0.5 (half back), 1 (fully back) |
+| `S`, stop as a multiple of the dip distance | 1, 2 |
+
+**The data.** Three years of one-minute candles from Binance's public archive (`data.binance.vision`, personal backtesting only under its terms): November 2023 to October 2026.
+
+- *Tuning period:* November 2023 to October 2025. The 12 combinations are compared here only.
+- *Hidden period:* November 2025 to October 2026. Run **once**, with one combination.
+
+**The procedure.**
+
+1. Run the 12 combinations on the tuning period. Keep the one with the highest average profit per trade at the 0.075% fee, among those with at least 200 trades.
+2. If no combination has at least 200 trades and a positive average there, the strategy has failed. The hidden period is not run.
+3. Otherwise run that one combination on the hidden period, once.
+
+**The pass mark, on the hidden period. All three must hold.**
+
+- At least 100 trades.
+- Average profit per trade of at least +0.05% of the trade's size, after fees and slippage, at the 0.075% fee.
+- Average profit per trade not negative at the 0.1% fee.
+
+The win rate is reported and decides nothing.
+
+**After the result.** A fail means this strategy is not built and not traded, and it is not retuned on these three years. A new idea needs a new hidden period. A pass means the rest of stage 7 is built for the chosen combination, and it must still prove itself in paper trading: one-minute candles cannot show what happens inside a minute.
+
 ### Stage 8: Order path and the kill switch
 
 - **Goal:** one path for every order (signal → risk engine → router → fill → record) and a stop button that works from the phone.
