@@ -68,6 +68,7 @@ async def run(settings: Settings) -> int:
 
     app = create_app(settings)
     app.state.new_entries_enabled = report.claude_ok
+    app.state.background_work = True  # start the price stream with the server
     if not report.claude_ok:
         logger.warning("claude api unavailable: new entries are disabled")
 

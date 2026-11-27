@@ -12,6 +12,7 @@ to: the testnet key to the testnet, the mainnet keys to the real exchange.
 import hashlib
 import hmac
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -30,6 +31,8 @@ from exchange.config import (
     mainnet_rest_url,
     rest_base_url,
 )
+from exchange.filters import RulesError, SymbolRules, parse_exchange_info
+from exchange.numbers import read_json
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +42,9 @@ CLOCK_SAMPLES = 3
 
 class ExchangeCheckError(Exception):
     """The Binance check failed. The message is safe to show the owner."""
+
+    # Seconds Binance asked us to wait before asking again (0 = it did not say).
+    retry_after: int = 0
 
 
 def _now_ms() -> int:
@@ -216,17 +222,23 @@ def configured_keys(settings: Settings) -> list[BinanceKey]:
     return keys
 
 
+def _error_code(response: httpx.Response) -> int | None:
+    """Binance's own error number, when the answer carries one."""
+    try:
+        code = response.json().get("code")
+    except (ValueError, AttributeError):
+        return None
+    return code if isinstance(code, int) and not isinstance(code, bool) else None
+
+
 def _describe_refusal(response: httpx.Response) -> str:
     """Why Binance said no, in our words. Binance's own text is not passed on."""
     if response.status_code in (418, 429):
         return "Binance is limiting requests from this address; try again later"
     if response.status_code == 403:
         return "Binance's firewall blocked the request"
-    try:
-        code = response.json().get("code")
-    except (ValueError, AttributeError):
-        code = None
-    if isinstance(code, int) and not isinstance(code, bool):
+    code = _error_code(response)
+    if code is not None:
         return _REFUSALS.get(
             code,
             f"Binance answered with status {response.status_code} (code {code})",
@@ -299,3 +311,62 @@ async def fetch_key_restrictions(
     if key.is_testnet:
         raise ValueError("the testnet has no key-settings address")
     return await signed_get(key, KEY_RESTRICTIONS_PATH, client)
+
+
+# --- Public reads (no key) ---
+
+EXCHANGE_INFO_PATH = "/api/v3/exchangeInfo"
+
+
+def _header_number(response: httpx.Response, name: str) -> int | None:
+    """A short whole number from a header, or None."""
+    value = response.headers.get(name, "")
+    return int(value) if re.fullmatch(r"[0-9]{1,6}", value) else None
+
+
+async def fetch_symbol_rules(
+    settings: Settings, symbols: tuple[str, ...], client: httpx.AsyncClient
+) -> dict[str, SymbolRules]:
+    """Each watched pair's trading rules, from the public `exchangeInfo`.
+
+    Sends no key. Raises ExchangeCheckError with a sentence written here.
+    """
+    if client.follow_redirects:
+        raise ValueError("Binance requests must not follow redirects")
+    try:
+        base_url = rest_base_url(settings)
+    except ExchangeConfigError as exc:
+        raise ExchangeCheckError(str(exc)) from None
+    # Binance wants the list as JSON text without spaces: ["BTCUSDT","ETHUSDT"]
+    wanted = "[" + ",".join(f'"{symbol}"' for symbol in symbols) + "]"
+    try:
+        response = await client.get(
+            f"{base_url}{EXCHANGE_INFO_PATH}?{urlencode({'symbols': wanted})}"
+        )
+    except httpx.TimeoutException:
+        raise ExchangeCheckError("Binance did not answer in time") from None
+    except (httpx.HTTPError, httpx.InvalidURL):
+        raise ExchangeCheckError("could not reach Binance") from None
+    used = _header_number(response, "X-MBX-USED-WEIGHT-1M")
+    if used is not None:
+        logger.info("binance request weight used this minute=%s", used)
+    if response.status_code in (418, 429):
+        wait = _header_number(response, "Retry-After") or 0
+        error = ExchangeCheckError(
+            "Binance is limiting requests from this address"
+            + (f"; wait {wait} seconds" if wait else "")
+        )
+        error.retry_after = wait
+        raise error
+    if response.status_code == 400 and _error_code(response) == -1121:
+        raise ExchangeCheckError(
+            "Binance does not know one of the pairs in MARKET_SYMBOLS"
+        )
+    if response.status_code != 200:
+        raise ExchangeCheckError(_describe_refusal(response))
+    try:
+        return parse_exchange_info(read_json(response.content), symbols)
+    except RulesError as exc:
+        raise ExchangeCheckError(str(exc)) from None
+    except ValueError:
+        raise ExchangeCheckError("Binance sent an answer we could not read") from None

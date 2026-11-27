@@ -9,7 +9,7 @@ Every route needs a valid access token, except:
 
 from fastapi import APIRouter
 
-from api.routes import auth, health, integrations, users
+from api.routes import auth, health, integrations, market, users
 
 API_PREFIX = "/api/v1"
 
@@ -24,3 +24,4 @@ api_router.include_router(auth.router)
 # Login needed for everything below.
 api_router.include_router(users.router)
 api_router.include_router(integrations.router)
+api_router.include_router(market.router)

@@ -299,9 +299,110 @@ No body. Sends one real ping. On the laptop: `{"status": "not_configured", "deta
 
 | Method | Path | Login | Dev only | What it does | Status |
 |---|---|---|---|---|---|
-| GET | `/market/symbols` | Yes | No | Lists the pairs the bot watches, with each pair's minimum order value. | Planned |
-| GET | `/market/ticker/{symbol}` | Yes | No | Returns the latest price for one pair. | Planned |
-| GET | `/market/stream/status` | Yes | No | Shows whether the live price stream is connected and how old the last message is. | Planned |
+| GET | `/market/symbols` | Yes | No | Lists the pairs the bot watches, with each pair's minimum order value, price step and quantity step. | **Built** |
+| GET | `/market/ticker/{symbol}` | Yes | No | Returns the latest price for one pair. | **Built** |
+| GET | `/market/stream/status` | Yes | No | Shows whether the live price stream is connected and how old the last message is. | **Built** |
+
+The app keeps one live connection to Binance for all watched pairs (`MARKET_SYMBOLS` in `.env`) and remembers the latest price of each. These three requests only read that memory: none of them calls Binance. Prices, quantities and order values are text (`"59896.01000000"`), never JSON numbers. Times are UTC.
+
+### `GET /market/symbols`
+
+```json
+{
+  "loaded_at": "2026-11-27T18:06:46.512345Z",
+  "stale": false,
+  "symbols": [
+    {
+      "symbol": "BTCUSDT",
+      "base_asset": "BTC",
+      "quote_asset": "USDT",
+      "status": "TRADING",
+      "trading": true,
+      "min_order_value": "5.00000000",
+      "tick_size": "0.01000000",
+      "step_size": "0.00001000",
+      "min_quantity": "0.00001000"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `loaded_at` | When the rules were last read from Binance (at startup, then every 6 hours). |
+| `stale` | `true` when the rules could not be refreshed for over 12 hours. Old rules are kept, but should not be trusted for new orders. |
+| `trading` | `true` only when Binance says the pair is open and Spot trading is allowed. |
+| `min_order_value` | The smallest order Binance accepts, in the quote asset (USDT). |
+| `tick_size` | Prices must be a multiple of this. |
+| `step_size` | Quantities must be a multiple of this. |
+| `min_quantity` | The smallest quantity Binance accepts. |
+
+`503` `market_not_ready` until the rules have been read (a second or two after startup); the message says why.
+
+### `GET /market/ticker/{symbol}`
+
+`{symbol}` is a watched pair, in any letter case: `/market/ticker/BTCUSDT`.
+
+```json
+{
+  "symbol": "BTCUSDT",
+  "bid": "59896.00000000",
+  "bid_quantity": "1.20514000",
+  "ask": "59896.01000000",
+  "ask_quantity": "3.80211000",
+  "last_price": "59896.01000000",
+  "last_quantity": "0.00042000",
+  "last_trade_at": "2026-11-27T18:06:52.101000Z",
+  "updated_at": "2026-11-27T18:06:52.140211Z",
+  "age_ms": 4,
+  "last_trade_age_ms": 43,
+  "stale": false
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `bid` / `bid_quantity` | The best price someone will buy at, and how much they want. |
+| `ask` / `ask_quantity` | The best price someone will sell at, and how much they offer. |
+| `last_price` / `last_quantity` / `last_trade_at` | The last trade. `null` until the first trade arrives. |
+| `updated_at` / `age_ms` | When the bid and ask last arrived, and how long ago. A trade does not count: a fresh trade says nothing about the bid and ask. |
+| `last_trade_age_ms` | How long ago the last trade arrived. `null` until the first one. |
+| `stale` | `true` when the bid and ask are older than 10 seconds, the stream is not connected, or the stream reconnected and has not sent this pair's bid and ask again yet. Do not act on a stale price. A very quiet pair can be stale simply because nothing changed; that is the safe side. |
+
+Errors: `404` `unknown_symbol` (not on the watch list), `422` (not a pair name), `503` `market_not_ready` (no price has arrived yet).
+
+### `GET /market/stream/status`
+
+```json
+{
+  "status": "connected",
+  "detail": "",
+  "host": "stream.binance.com",
+  "streams": ["btcusdt@bookTicker", "btcusdt@aggTrade"],
+  "connected_since": "2026-11-27T18:06:46.201000Z",
+  "last_message_at": "2026-11-27T18:36:46.498000Z",
+  "last_message_age_ms": 3,
+  "messages_received": 612044,
+  "messages_ignored": 0,
+  "reconnects": 0,
+  "recording": {
+    "enabled": false,
+    "active": false,
+    "file": null,
+    "lines_written": 0,
+    "folder_megabytes": 0.0,
+    "detail": "off (MARKET_RECORDING is not true)"
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `status` | `connected`; `connecting` (down and retrying, `detail` says why); `not_configured` (`BINANCE_WS_URL` is wrong or empty). Always answers `200`. |
+| `streams` | Two per pair: `bookTicker` (best bid and ask) and `aggTrade` (every trade). |
+| `reconnects` | How many times the connection had to be opened again since the app started. Binance itself closes every connection after 24 hours, so this grows by at least one a day. |
+| `messages_ignored` | Messages the app could not use. Should stay at or near zero. |
+| `recording` | Whether the stream is being saved to `recordings/` (`MARKET_RECORDING=true`). A new file starts at each app start and each UTC day. It stops by itself at 2 GB, or when the disk has under 1 GB free. |
 
 ## Trading control
 

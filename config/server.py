@@ -19,6 +19,7 @@ from config.settings import Settings
 from config.version import APP_VERSION
 from services import clock
 from services.integration_service import CheckResult, CheckThrottle, ReadinessCache
+from services.market_service import MarketData
 
 OK = "✔"
 FAILED = "✖"
@@ -46,8 +47,15 @@ def bind_port(settings: Settings) -> socket.socket:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
-    yield
-    await dispose_engine()
+    # The price stream runs for as long as the app serves. Only `server.py`
+    # switches it on, so tests that build the app never open a connection.
+    if app.state.background_work:
+        app.state.market.start()
+    try:
+        yield
+        await app.state.market.stop()
+    finally:
+        await dispose_engine()
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -69,6 +77,9 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.check_throttle = CheckThrottle()
     # The database session maker. Made on the first request that needs it.
     app.state.sessions = None
+    # Live prices and pair rules. Created here, started by the lifespan.
+    app.state.market = MarketData(settings)
+    app.state.background_work = False
     # Off until `server.py` has seen the Claude API check pass at startup.
     # This is only the startup result: the trading loop (Day 3) keeps its own
     # live switch in the risk engine and must not rely on this alone.
