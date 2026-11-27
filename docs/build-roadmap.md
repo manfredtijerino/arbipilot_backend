@@ -44,7 +44,7 @@ From `docs/project-brief.md` §2. Each objective has a stage where it is built a
 | 2 | Tables and migrations | 0 | **Passed 2026-11-24.** Migrations `0001` and `0002` on `arbipilot_dev` and `arbipilot_test`; owner checked the tables in pgAdmin and approved |
 | 3 | Login and users | 9 | **Passed 2026-11-26.** Owner ran all nine endpoints from his own Postman collection, checked the `users` row in pgAdmin and approved. Commit `7a3ab99`, merged to `main` by pull request #1 (`8bf4847`) |
 | 4 | Connection checks | 7 | **Passed 2026-11-27.** Owner built the seven requests in his own Postman collection, ran them against development and approved. Branch `feature/connection-checks`. Still to prove at stage 12 with the mainnet keys: withdrawals off, IP lock, Spot only |
-| 5 | Market data | 3 | Not started |
+| 5 | Market data | 3 | **Passed 2026-11-27.** Owner built the three requests in his own Postman collection, ran them against development and approved. One-hour stream run with a forced drop at minute 30: reconnected in 2 seconds, 712,817 messages, 0 unusable. Branch `feature/market-data`. Watched pairs are a placeholder (`MARKET_SYMBOLS`) until `OBJECTIVES.md` names them |
 | 6 | Risk limits and the risk engine | 1 | Blocked: needs owner action 0 |
 | 7 | Strategy and honest paper fills | 1 | Blocked: needs owner action 0 |
 | 8 | Order path and the kill switch | 5 | Not started |
@@ -125,6 +125,12 @@ Claude Code updates this table when a gate is passed, with the date.
 - **Endpoint:** `GET /trading/risk`.
 - **Needs first:** owner action 0, because the limit values come from `docs/day0-recap.md` and the decisions file and must not be guessed.
 - **Gate:** the owner reads the limits in Postman and confirms they are his; the tests show each limit refusing or shrinking an order.
+- **Carried over from the stage 5 reviews (must be handled here or at stage 8):**
+  - The risk engine refuses an entry when `ticker().stale` is true, when the pair's rules are `stale`, or when the pair's `trading` is false.
+  - The owner decides whether "a price older than 10 seconds is stale" (`QUOTE_STALE_SECONDS` in `exchange/config.py`) stays a technical value or moves into `decisions.yaml`.
+  - Stream down for longer than a set time pauses new entries and sends a Telegram alert (today it is only a log line).
+  - Measure the delay between Binance's trade time and our clock, and treat a large delay as stale.
+  - At `/deploy`: decide where `recordings/` lives on the server (a volume, not inside the container) before `MARKET_RECORDING=true` is used there.
 
 ### Stage 7: Strategy and honest paper fills
 

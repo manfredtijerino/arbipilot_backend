@@ -2342,6 +2342,355 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Market data",
+      "description": "The pairs the bot watches, their trading rules and their live prices. Log in first. These read what the app already holds in memory; they never call Binance themselves.",
+      "item": [
+        {
+          "name": "Symbols - watched pairs and their rules",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Every pair has a minimum order value above zero, sent as text', function () {",
+                  "    const symbols = pm.response.json().symbols;",
+                  "    pm.expect(symbols.length).to.be.above(0);",
+                  "    symbols.forEach(function (s) {",
+                  "        pm.expect(s.min_order_value).to.be.a('string');",
+                  "        pm.expect(parseFloat(s.min_order_value)).to.be.above(0);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/market/symbols",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "market",
+                "symbols"
+              ]
+            },
+            "description": "The pairs in MARKET_SYMBOLS with each pair's rules, read from Binance at startup and again every 6 hours: the smallest order value, the price step (tick) and the quantity step. 503 for the first second or two after the app starts."
+          },
+          "response": [
+            {
+              "name": "200 - the pairs",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/market/symbols",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "market",
+                    "symbols"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"loaded_at\": \"2026-11-27T18:06:46.512345Z\",\n  \"stale\": false,\n  \"symbols\": [\n    {\n      \"symbol\": \"BTCUSDT\",\n      \"base_asset\": \"BTC\",\n      \"quote_asset\": \"USDT\",\n      \"status\": \"TRADING\",\n      \"trading\": true,\n      \"min_order_value\": \"5.00000000\",\n      \"tick_size\": \"0.01000000\",\n      \"step_size\": \"0.00001000\",\n      \"min_quantity\": \"0.00001000\"\n    },\n    {\n      \"symbol\": \"ETHUSDT\",\n      \"base_asset\": \"ETH\",\n      \"quote_asset\": \"USDT\",\n      \"status\": \"TRADING\",\n      \"trading\": true,\n      \"min_order_value\": \"5.00000000\",\n      \"tick_size\": \"0.01000000\",\n      \"step_size\": \"0.00010000\",\n      \"min_quantity\": \"0.00010000\"\n    },\n    {\n      \"symbol\": \"BNBUSDT\",\n      \"base_asset\": \"BNB\",\n      \"quote_asset\": \"USDT\",\n      \"status\": \"TRADING\",\n      \"trading\": true,\n      \"min_order_value\": \"5.00000000\",\n      \"tick_size\": \"0.01000000\",\n      \"step_size\": \"0.00100000\",\n      \"min_quantity\": \"0.00100000\"\n    }\n  ]\n}"
+            },
+            {
+              "name": "503 - rules not loaded yet",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/market/symbols",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "market",
+                    "symbols"
+                  ]
+                }
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"market_not_ready\",\n    \"message\": \"The pair rules are not loaded yet: the rules are still being read.\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Ticker - live price of one pair",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('The price is fresh and bid is below ask', function () {",
+                  "    const t = pm.response.json();",
+                  "    pm.expect(t.stale).to.eql(false);",
+                  "    pm.expect(parseFloat(t.bid)).to.be.below(parseFloat(t.ask));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/market/ticker/BTCUSDT",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "market",
+                "ticker",
+                "BTCUSDT"
+              ]
+            },
+            "description": "The latest prices of one watched pair. bid = the best price someone will buy at; ask = the best price someone will sell at; last_price = the last trade. stale is true when the bid and ask are older than 10 seconds, the stream is down, or it has just reconnected and not sent them again yet. Change BTCUSDT in the address to another watched pair."
+          },
+          "response": [
+            {
+              "name": "200 - the price",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/market/ticker/BTCUSDT",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "market",
+                    "ticker",
+                    "BTCUSDT"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"symbol\": \"BTCUSDT\",\n  \"bid\": \"59896.00000000\",\n  \"bid_quantity\": \"1.20514000\",\n  \"ask\": \"59896.01000000\",\n  \"ask_quantity\": \"3.80211000\",\n  \"last_price\": \"59896.01000000\",\n  \"last_quantity\": \"0.00042000\",\n  \"last_trade_at\": \"2026-11-27T18:06:52.101000Z\",\n  \"updated_at\": \"2026-11-27T18:06:52.140211Z\",\n  \"age_ms\": 4,\n  \"last_trade_age_ms\": 43,\n  \"stale\": false\n}"
+            },
+            {
+              "name": "404 - not a watched pair",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/market/ticker/DOGEUSDT",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "market",
+                    "ticker",
+                    "DOGEUSDT"
+                  ]
+                }
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"unknown_symbol\",\n    \"message\": \"This pair is not on the watch list.\"\n  }\n}"
+            },
+            {
+              "name": "503 - no price yet",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/market/ticker/BTCUSDT",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "market",
+                    "ticker",
+                    "BTCUSDT"
+                  ]
+                }
+              },
+              "status": "Service Unavailable",
+              "code": 503,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"error\": {\n    \"code\": \"market_not_ready\",\n    \"message\": \"No price has arrived for BTCUSDT yet.\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Stream status - is the price stream connected",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('The stream is connected and messages are arriving', function () {",
+                  "    const s = pm.response.json();",
+                  "    pm.expect(s.status).to.eql('connected');",
+                  "    pm.expect(s.messages_received).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/market/stream/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "market",
+                "stream",
+                "status"
+              ]
+            },
+            "description": "Is the live connection to Binance up, since when, how many messages arrived, and how many times it had to reconnect. status is connected, connecting (it is retrying; detail says why) or not_configured."
+          },
+          "response": [
+            {
+              "name": "200 - connected",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/market/stream/status",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "market",
+                    "stream",
+                    "status"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"connected\",\n  \"detail\": \"\",\n  \"host\": \"stream.binance.com\",\n  \"streams\": [\n    \"btcusdt@bookTicker\",\n    \"btcusdt@aggTrade\",\n    \"ethusdt@bookTicker\",\n    \"ethusdt@aggTrade\",\n    \"bnbusdt@bookTicker\",\n    \"bnbusdt@aggTrade\"\n  ],\n  \"connected_since\": \"2026-11-27T18:06:46.201000Z\",\n  \"last_message_at\": \"2026-11-27T18:36:46.498000Z\",\n  \"last_message_age_ms\": 3,\n  \"messages_received\": 612044,\n  \"messages_ignored\": 0,\n  \"reconnects\": 0,\n  \"recording\": {\n    \"enabled\": false,\n    \"active\": false,\n    \"file\": null,\n    \"lines_written\": 0,\n    \"folder_megabytes\": 0.0,\n    \"detail\": \"off (MARKET_RECORDING is not true)\"\n  }\n}"
+            },
+            {
+              "name": "200 - reconnecting",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/market/stream/status",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "market",
+                    "stream",
+                    "status"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"connecting\",\n  \"detail\": \"could not reach Binance\",\n  \"host\": \"stream.binance.com\",\n  \"streams\": [\n    \"btcusdt@bookTicker\",\n    \"btcusdt@aggTrade\"\n  ],\n  \"connected_since\": null,\n  \"last_message_at\": \"2026-11-27T18:36:46.498000Z\",\n  \"last_message_age_ms\": 8200,\n  \"messages_received\": 612044,\n  \"messages_ignored\": 0,\n  \"reconnects\": 1,\n  \"recording\": {\n    \"enabled\": false,\n    \"active\": false,\n    \"file\": null,\n    \"lines_written\": 0,\n    \"folder_megabytes\": 0.0,\n    \"detail\": \"off (MARKET_RECORDING is not true)\"\n  }\n}"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

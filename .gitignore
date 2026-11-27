@@ -16,3 +16,6 @@ CLAUDE.local.md
 
 # macOS
 .DS_Store
+
+# recorded price streams (test data, large)
+recordings/

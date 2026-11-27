@@ -79,3 +79,17 @@ class DatabaseUnavailable(ServiceError):
     status_code = 503
     code = "database_unavailable"
     message = "The database cannot be reached right now. Try again shortly."
+
+
+class UnknownSymbol(ServiceError):
+    status_code = 404
+    code = "unknown_symbol"
+    message = "This pair is not on the watch list."
+
+
+class MarketNotReady(ServiceError):
+    """The market data asked for has not arrived yet."""
+
+    status_code = 503
+    code = "market_not_ready"
+    message = "Market data is not ready yet. Try again in a few seconds."

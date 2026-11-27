@@ -94,6 +94,11 @@ class Settings(BaseSettings):
     # REST and WebSocket addresses (testnet mode swaps both to the testnet hosts).
     binance_base_url: str = ""
     binance_ws_url: str = ""
+    # The pairs the bot watches, comma-separated. Each must end in USDT.
+    market_symbols: str = "BTCUSDT,ETHUSDT,BNBUSDT"
+    # true = save every price message to recordings/ (test data for later).
+    # Off by default: the files grow by hundreds of megabytes a day.
+    market_recording: bool = False
     # Fee per side with the BNB discount on.
     fee_maker: Decimal = Decimal("0.00075")
     fee_taker: Decimal = Decimal("0.00075")
@@ -135,6 +140,19 @@ class Settings(BaseSettings):
             raise ValueError("may contain only letters, digits and underscores")
         return value
 
+    @field_validator("market_symbols")
+    @classmethod
+    def _valid_symbol_list(cls, value: str) -> str:
+        symbols = [part.strip().upper() for part in value.split(",") if part.strip()]
+        if not 1 <= len(symbols) <= 20:
+            raise ValueError("must list between 1 and 20 pairs")
+        if len(set(symbols)) != len(symbols):
+            raise ValueError("lists a pair twice")
+        for symbol in symbols:
+            if not re.fullmatch(r"[A-Z0-9]{2,15}USDT", symbol):
+                raise ValueError("each pair must look like BTCUSDT")
+        return ",".join(symbols)
+
     @field_validator("jwt_secret")
     @classmethod
     def _jwt_secret_is_long_enough(cls, value: SecretStr) -> SecretStr:
@@ -156,6 +174,10 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def market_symbol_list(self) -> tuple[str, ...]:
+        return tuple(self.market_symbols.split(","))
 
     @property
     def frontend_origin_list(self) -> list[str]:
