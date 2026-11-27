@@ -227,6 +227,67 @@ The win rate is reported and decides nothing.
 
 By the rule above, this strategy is not built and not traded, and it is not retuned on these years. Reproduce with `python scripts/backtest_download.py` then `python scripts/backtest_run.py tuning`.
 
+#### Stage 7b: the trend test, and its rules fixed before any result (owner decision 2026-11-27)
+
+After the dip strategy failed, the owner chose to test "following the trend" as plain rules, with no Claude judge. Everything below was written and committed **before** the test was run, and nothing in it may be changed after a result has been seen. This is idea 1 of at most 3 that may be checked against this hidden period; after three, a fresh hidden period is needed.
+
+**The rules, the same for every combination.**
+
+- Pairs: BTCUSDT, ETHUSDT, BNBUSDT. Daily candles; a day runs from 00:00 to 24:00 UTC. Long only. One trade per pair at a time; the pairs do not affect each other.
+- *Buy signal:* at the close of day D, the pair has no trade, and D's close is **above** the highest close of the `N` days before D (D itself not included).
+- *Sell signal:* at the close of day D, the pair has a trade, and D's close is **below** the lowest close of the `M` days before D (D itself not included).
+- *Orders:* a signal at the close of day D becomes an immediate order at the **opening price of day D+1**. Nothing is ever bought or sold at the price that made the signal.
+- *Size:* 24 USDT per trade (8% of 300 USDT), the same for every trade. Profits are not re-invested.
+- *Costs:* every order fills 0.05% worse than the opening price, and pays a fee of 0.1%. The result is also reported at a 0.075% fee, which decides nothing.
+- *End of a period:* a trade still open on the last day is sold at that day's close, with the same costs. Each period starts with no trade open.
+- *No peeking:* a decision at the close of day D uses only closes up to D. A test changes later days and checks that no earlier decision changes.
+- *Missing days:* a signal needs every one of its `N` (or `M`) earlier days to exist. (The downloaded data has no missing day.)
+- Not modelled: the daily-loss pause, and Claude.
+
+**The four combinations, each written out in full.**
+
+1. `N`=20, `M`=10: buy at the next day's open after a close above the highest close of the previous 20 days; sell at the next day's open after a close below the lowest close of the previous 10 days.
+2. `N`=20, `M`=20: buy at the next day's open after a close above the highest close of the previous 20 days; sell at the next day's open after a close below the lowest close of the previous 20 days.
+3. `N`=55, `M`=10: buy at the next day's open after a close above the highest close of the previous 55 days; sell at the next day's open after a close below the lowest close of the previous 10 days.
+4. `N`=55, `M`=20: buy at the next day's open after a close above the highest close of the previous 55 days; sell at the next day's open after a close below the lowest close of the previous 20 days.
+
+**The data.** Daily candles from Binance's public archive, from November 2017 (BNBUSDT's first day is 6 November 2017).
+
+- *Choosing period:* 1 January 2018 to 31 October 2022. It starts on 1 January 2018 and not in November 2017 because BNBUSDT needs 55 earlier days before its first signal. November and December 2017 are used only as those earlier days.
+- *Hidden period:* 1 November 2022 to 31 October 2026. Earlier days are used only as the `N` and `M` days before a signal.
+
+**Buy-and-hold, the thing to beat: same money, same dates, same costs.** On the first day of the period, 24 USDT of each pair is bought at that day's opening price, 0.05% worse, with the 0.1% fee. On the last day it is sold at that day's close, 0.05% worse, with the 0.1% fee. Its profit is what comes back minus the 72 USDT.
+
+**Worst drop, measured the same way for both.** Each has 72 USDT on the first day. Every day at the close its money is counted: for buy-and-hold, the value of the three holdings; for the bot, 72 USDT plus the profit of finished trades plus the gain or loss of open ones at that close. The worst drop is the largest fall from an earlier high, as a share of that high.
+
+**The procedure.**
+
+1. Run the four combinations on the choosing period. Keep the one with the highest total profit in USDT at the 0.1% fee, among those with at least 20 trades and a profit above zero. On an exact tie, the one listed first.
+2. If none has at least 20 trades and a profit above zero, the idea has failed. The hidden period is not run.
+3. Otherwise run that one combination on the hidden period, **once**. The result is written to `docs/trend-hidden-result.txt` and committed; the run refuses to start when that file exists.
+
+**The pass mark, on the hidden period, at the 0.1% fee. All four must hold.**
+
+- (a) At least 20 trades.
+- (b) The bot's total profit is above zero.
+- (c) One of these two:
+  - the bot's profit is at least buy-and-hold's profit; or
+  - the bot's profit is at least 50% of buy-and-hold's profit **and** the bot's worst drop is at most 50% of buy-and-hold's worst drop.
+- (d) The bot's total profit with its single best trade taken away is still above zero.
+
+**Checked before the run (the owner's condition): the hidden period contains a real fall.** Measured on 2026-11-27 from the downloaded prices, with no strategy run. These numbers were looked at **after** the pass mark above was proposed, and the pass mark was not changed.
+
+| Buy-and-hold | Choosing period | Hidden period |
+|---|---|---|
+| BTCUSDT | +49%, worst drop 81% | +279%, worst drop 53% (6 Oct 2025 to 30 Jun 2026) |
+| ETHUSDT | +115%, worst drop 94% | +43%, worst drop 68% (22 Aug 2025 to 25 Jun 2026) |
+| BNBUSDT | +3710%, worst drop 80% | +116%, worst drop 58% (8 Oct 2025 to 30 Jun 2026) |
+| The three together | +1291%, worst drop 84% | +146%, worst drop 57% (8 Oct 2025 to 30 Jun 2026) |
+
+(These are before costs and from the first day's open; the test computes buy-and-hold exactly, with costs.) So in the hidden period the bot must earn at least as much as buy-and-hold, or at least half of it with a worst drop of at most half of buy-and-hold's.
+
+**After the result.** A fail means this idea is not built and not traded, and it is not retuned on these years. A pass means it is built on plain rules and must then run on paper for some weeks, which proves the machinery (orders, saving, restarts) and not the profit. No real money before both.
+
 ### Stage 8: Order path and the kill switch
 
 - **Goal:** one path for every order (signal → risk engine → router → fill → record) and a stop button that works from the phone.

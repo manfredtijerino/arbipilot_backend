@@ -173,5 +173,27 @@ def test_a_candle_from_a_neighbouring_loaded_month_is_refused(tmp_path: Path) ->
 def test_the_same_minute_twice_is_refused(tmp_path: Path) -> None:
     twice = row(DEC_2024) + "\n" + row(DEC_2024)
     (tmp_path / "BTCUSDT-1m-2024-12.zip").write_bytes(zipped(twice))
-    with pytest.raises(HistoryError, match="same minute twice"):
+    with pytest.raises(HistoryError, match="same candle twice"):
         load_candles("BTCUSDT", (2024, 12), (2024, 12), tmp_path)
+
+
+def test_daily_candles_use_one_slot_per_day(tmp_path: Path) -> None:
+    day = 86_400_000
+    text = row(DEC_2024, c="100") + "\n" + row(DEC_2024 + 2 * day, c="100.25")
+    name = file_name("BTCUSDT", 2024, 12, "1d")
+    assert name == "BTCUSDT-1d-2024-12.zip"
+    assert file_url("BTCUSDT", 2024, 12, "1d").endswith("/BTCUSDT/1d/" + name)
+    (tmp_path / name).write_bytes(zipped(text))
+    days = load_candles("BTCUSDT", (2024, 12), (2024, 12), tmp_path, "1d")
+    assert len(days) == 31 and days.step == 1440
+    assert [days.close[0], days.close[1]] == [to_units("100"), 0]
+    assert days.close[2] == to_units("100.25")
+    assert days.time_of(2) == datetime(2024, 12, 3, tzinfo=UTC)
+    assert days.index_of(2024, 12) == 0 and days.head(2).step == 1440
+
+
+def test_a_daily_candle_that_starts_mid_day_is_refused(tmp_path: Path) -> None:
+    name = file_name("BTCUSDT", 2024, 12, "1d")
+    (tmp_path / name).write_bytes(zipped(row(DEC_2024 + 3_600_000)))
+    with pytest.raises(HistoryError, match="off its time grid"):
+        load_candles("BTCUSDT", (2024, 12), (2024, 12), tmp_path, "1d")

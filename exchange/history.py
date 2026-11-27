@@ -65,13 +65,18 @@ def months_between(
     return months
 
 
-def file_name(symbol: str, year: int, month: int) -> str:
-    return f"{symbol}-1m-{month_name(year, month)}.zip"
+# The candle sizes used here, in minutes per candle.
+INTERVALS = {"1m": 1, "1d": 1440}
 
 
-def file_url(symbol: str, year: int, month: int) -> str:
-    name = file_name(symbol, year, month)
-    return f"https://{ARCHIVE_HOST}/data/spot/monthly/klines/{symbol}/1m/{name}"
+def file_name(symbol: str, year: int, month: int, interval: str = "1m") -> str:
+    return f"{symbol}-{interval}-{month_name(year, month)}.zip"
+
+
+def file_url(symbol: str, year: int, month: int, interval: str = "1m") -> str:
+    name = file_name(symbol, year, month, interval)
+    folder = f"data/spot/monthly/klines/{symbol}/{interval}"
+    return f"https://{ARCHIVE_HOST}/{folder}/{name}"
 
 
 def checksum_matches(content: bytes, checksum_text: str, name: str) -> bool:
@@ -89,9 +94,10 @@ def minute_of(year: int, month: int) -> int:
 
 @dataclass
 class Candles:
-    """One pair's one-minute candles, one slot per minute, 0 where missing.
+    """One pair's candles, one slot per candle, 0 where missing.
 
-    Slot `i` is the minute `first_minute + i` (minutes since 1970, UTC).
+    Slot `i` starts at minute `first_minute + i * step` (minutes since 1970,
+    UTC). `step` is 1 for one-minute candles and 1440 for daily ones.
     """
 
     symbol: str
@@ -100,15 +106,17 @@ class Candles:
     high: array
     low: array
     close: array
+    step: int = 1
 
     def __len__(self) -> int:
         return len(self.close)
 
     def index_of(self, year: int, month: int) -> int:
-        return minute_of(year, month) - self.first_minute
+        return (minute_of(year, month) - self.first_minute) // self.step
 
     def time_of(self, index: int) -> datetime:
-        return datetime.fromtimestamp((self.first_minute + index) * 60, UTC)
+        minute = self.first_minute + index * self.step
+        return datetime.fromtimestamp(minute * 60, UTC)
 
     def head(self, minutes: int) -> "Candles":
         """Only the first `minutes` minutes: what was known up to then."""
@@ -119,6 +127,7 @@ class Candles:
             self.high[:minutes],
             self.low[:minutes],
             self.close[:minutes],
+            self.step,
         )
 
     @property
@@ -167,29 +176,33 @@ def load_candles(
     first: tuple[int, int],
     last: tuple[int, int],
     folder: Path = HISTORY_FOLDER,
+    interval: str = "1m",
 ) -> Candles:
     """Every month from `first` to `last`, read from the downloaded zips."""
-    months = months_between(first, last)
+    step = INTERVALS[interval]
     start = minute_of(*first)
     year, month = last
     end = minute_of(year + 1, 1) if month == 12 else minute_of(year, month + 1)
-    candles = empty_candles(symbol, start, end - start)
-    for year, month in months:
-        path = folder / file_name(symbol, year, month)
+    candles = empty_candles(symbol, start, (end - start) // step)
+    candles.step = step
+    for year, month in months_between(first, last):
+        path = folder / file_name(symbol, year, month, interval)
         try:
             content = path.read_bytes()
         except OSError:
             raise HistoryError(f"{path.name} is not downloaded") from None
-        month_start = minute_of(year, month) - start
+        month_start = minute_of(year, month)
         month_end = (
             minute_of(year + 1, 1) if month == 12 else minute_of(year, month + 1)
-        ) - start
+        )
         for minute, opened, high, low, close in read_rows(content):
-            index = minute - start
-            if not month_start <= index < month_end:
+            if not month_start <= minute < month_end:
                 raise HistoryError(f"{path.name} holds a candle outside its month")
+            if (minute - start) % step:
+                raise HistoryError(f"{path.name} holds a candle off its time grid")
+            index = (minute - start) // step
             if candles.close[index]:
-                raise HistoryError(f"{path.name} holds the same minute twice")
+                raise HistoryError(f"{path.name} holds the same candle twice")
             candles.open[index], candles.high[index] = opened, high
             candles.low[index], candles.close[index] = low, close
     return candles

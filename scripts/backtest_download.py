@@ -1,6 +1,9 @@
-"""Downloads three years of one-minute candles for the backtest.
+"""Downloads past candles for the backtests.
 
-Run from the project folder:  python scripts/backtest_download.py
+Run from the project folder:
+
+    python scripts/backtest_download.py          # one-minute, 2023-11 on
+    python scripts/backtest_download.py daily    # daily, 2017-11 on
 
 Files come from Binance's public archive (no key, no login) and land in
 `history/`, which git ignores. Each file is checked against the SHA-256 that
@@ -25,8 +28,9 @@ from exchange.history import (  # noqa: E402
 )
 
 SYMBOLS = ("BTCUSDT", "ETHUSDT", "BNBUSDT")
-FIRST_MONTH = (2023, 11)
 LAST_MONTH = (2026, 10)
+# What to fetch: the candle size and the first month.
+SETS = {"minute": ("1m", (2023, 11)), "daily": ("1d", (2017, 11))}
 PAUSE_SECONDS = 0.3  # be gentle with the archive
 LARGEST_FILE = 50 * 1024 * 1024
 
@@ -40,22 +44,23 @@ async def fetch(client: httpx.AsyncClient, url: str) -> bytes:
     return response.content
 
 
-async def download(folder: Path = HISTORY_FOLDER) -> int:
+async def download(which: str = "minute", folder: Path = HISTORY_FOLDER) -> int:
+    interval, first_month = SETS[which]
     folder.mkdir(exist_ok=True)
     wanted = [
         (symbol, year, month)
         for symbol in SYMBOLS
-        for year, month in months_between(FIRST_MONTH, LAST_MONTH)
+        for year, month in months_between(first_month, LAST_MONTH)
     ]
     done = 0
     async with httpx.AsyncClient(timeout=60, follow_redirects=False) as client:
         for symbol, year, month in wanted:
-            name = file_name(symbol, year, month)
+            name = file_name(symbol, year, month, interval)
             target = folder / name
             if target.exists():
                 done += 1
                 continue
-            url = file_url(symbol, year, month)
+            url = file_url(symbol, year, month, interval)
             try:
                 content = await fetch(client, url)
                 checksum = (await fetch(client, url + ".CHECKSUM")).decode("ascii")
@@ -76,4 +81,5 @@ async def download(folder: Path = HISTORY_FOLDER) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(download()))
+    which = "daily" if sys.argv[1:] == ["daily"] else "minute"
+    sys.exit(asyncio.run(download(which)))
