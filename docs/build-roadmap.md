@@ -208,6 +208,25 @@ The win rate is reported and decides nothing.
 
 **After the result.** A fail means this strategy is not built and not traded, and it is not retuned on these three years. A new idea needs a new hidden period. A pass means the rest of stage 7 is built for the chosen combination, and it must still prove itself in paper trading: one-minute candles cannot show what happens inside a minute.
 
+**Result (2026-11-27, run after commit `b8f7ca4`): FAILED at step 2.** On the tuning period (November 2023 to October 2025; BTC +216%, ETH +112%, BNB +381%; no minute missing) every one of the 12 combinations lost money per trade after fees. The hidden period was not run and stays unseen.
+
+| Combination | Trades | Average per trade at 0.075% | at 0.1% | Wins |
+|---|---|---|---|---|
+| K=2 half, stop 1x | 2443 | −0.148% | −0.198% | 65.1% |
+| K=2 half, stop 2x | 2498 | −0.130% | −0.180% | 72.1% |
+| K=2 full, stop 1x | 6969 | −0.196% | −0.246% | 45.8% |
+| K=2 full, stop 2x | 6921 | −0.179% | −0.229% | 55.8% |
+| K=3 half, stop 1x | 1190 | −0.162% | −0.212% | 63.8% |
+| K=3 half, stop 2x | 1170 | −0.138% | −0.188% | 70.4% |
+| K=3 full, stop 1x | 3016 | −0.189% | −0.239% | 45.5% |
+| K=3 full, stop 2x | 2922 | −0.181% | −0.231% | 53.5% |
+| K=4 half, stop 1x | 371 | −0.145% | −0.195% | 61.5% |
+| K=4 half, stop 2x | 368 | −0.083% | −0.133% | 69.3% |
+| K=4 full, stop 1x | 770 | −0.149% | −0.199% | 46.6% |
+| K=4 full, stop 2x | 757 | −0.117% | −0.167% | 53.8% |
+
+By the rule above, this strategy is not built and not traded, and it is not retuned on these years. Reproduce with `python scripts/backtest_download.py` then `python scripts/backtest_run.py tuning`.
+
 ### Stage 8: Order path and the kill switch
 
 - **Goal:** one path for every order (signal → risk engine → router → fill → record) and a stop button that works from the phone.
