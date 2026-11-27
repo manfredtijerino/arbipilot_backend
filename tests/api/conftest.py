@@ -16,6 +16,7 @@ from config.server import create_app
 from config.settings import Settings
 from tests.conftest import FakeClock
 from tests.helpers.memory_store import MemoryStore
+from tests.helpers.paper import opener
 
 EMAIL = "owner@example.test"
 PASSWORD = "test-password-123"
@@ -49,6 +50,7 @@ def app(
         return store
 
     app.dependency_overrides[dependencies.get_store] = memory_store
+    app.state.paper.open_store = opener(store)  # the paper account too
     return app
 
 

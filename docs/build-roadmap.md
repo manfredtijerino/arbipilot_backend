@@ -142,13 +142,21 @@ Claude Code updates this table when a gate is passed, with the date.
 - **Needs first:** owner action 0 (`OBJECTIVES.md` defines the strategy).
 - **Gate:** replaying a recorded stream produces the same signals and fills every time; the owner sees signals listed in Postman and the fee on a sample trade matches a hand calculation (a $24 trade pays $0.018 per side).
 - **Carried over from stage 6 (must be handled here):**
-  - Store the day's starting equity and the daily-loss pause in the database, so a restart cannot forget a pause (today they are in memory).
-  - Replace the paper starting balance behind `GET /trading/risk` with the real paper account (cash, positions, entry orders waiting).
+  - DONE 2026-11-27: the day's starting equity and both pauses are stored in the `risk_state` table and given back to the engine after a restart.
+  - DONE 2026-11-27 (cash and positions; waiting orders do not exist yet): `GET /trading/risk` reads the real paper account, kept in the database (`paper_account`, `paper_positions`, `paper_fills`, migration 0003).
   - The strategy and the watched pairs still need the owner's word: `OBJECTIVES.md`, or his answers in the session.
   - Build a new account snapshot for every order, with entry orders still waiting in `pending_entries` and exit orders still waiting in `Position.reserved`. The engine does not remember what it approved.
   - Call the engine on every change of the account's value, not only on orders, so the daily loss is always seen.
   - Alert when an exit is refused because the pair's rules are not loaded; consider keeping the last known rules across a restart.
   - Stage 8: the kill switch calls `RiskEngine.pause()` and `resume()`, and its state is stored so a restart stays paused. Consider a generous, alerting limit on sell orders per minute.
+- **Shared parts built 2026-11-27 (no strategy yet):** fee maths (`trading/fees.py`, rate `fees.taker_pct` in `decisions.yaml`, 0.1% until the owner confirms his rate), at-once paper fills (`trading/paper.py`), the paper account service (`services/paper_service.py`), and `GET /trading/positions`, `GET /trading/fills`, `POST /trading/orders/test` (development only).
+- **Left open by the reviews of the shared parts (must be handled where named):**
+  - Stage 7, with the strategy: the trade-through rule and the delay for waiting orders are not modelled; today's fills are at-once only, so they must not be read as honest shadow results.
+  - Stage 8: the kill switch must write its pause to `risk_state` in the same step (today a pause is written at the next piece of work), and the saved risk state must be restored at startup, before the trading loop, not at the first `/trading` request.
+  - Order router: the caller supplies `client_order_id` so a retry cannot repeat an order (paper orders make their own); read the real `commission` and `commissionAsset` (Binance takes a buy's fee from the coin received unless fees are paid in BNB, so the real holding is slightly smaller than the paper one).
+  - Real account: the single risk engine is fed the paper account's value; it must not also be fed a real account.
+  - Next migration: cheap checks `cash >= 0`, `notional >= 0`, `cash_after >= 0`, `day_start_equity >= 0`. Migration 0003's downgrade deletes the paper record: owner's approval needed, even in development.
+  - One app process only: the paper account's lock is per process.
 
 #### Stage 7a: the backtest, and its rules fixed before any result (owner decision 2026-11-27)
 
@@ -345,6 +353,11 @@ By the rule above, this idea is not built and not traded, and it is not retuned 
 - **Example:** `GET /performance/summary` shows profit per trade after fees, win rate and drawdown, next to "just held USDT" and "just held BTC".
 - **Endpoints:** `GET /trades`, `/trades/{id}`, `/positions`, `/performance/summary`, `/performance/daily`, `/system/config`, `/system/events`.
 - **Gate:** the owner picks one trade in Postman and checks its entry, exit, fees, AI verdict and risk decision against pgAdmin; the summary matches a hand calculation on a small set of trades.
+- **Added by the owner on 2026-11-27 (built here, because both need the scoreboard's numbers and stage 9's AI budget):**
+  - **Daily report on Telegram, in simple words.** Once a day: the day's trades, the day's profit or loss after fees, what the account is worth, the result since the start next to "just held", whether anything is paused, and whether the machine is healthy. The numbers come from the scoreboard, never from the AI's memory; the AI only words them. When the AI is unavailable or over budget, a plain fixed-format report is sent instead.
+  - **Chat with the bot on Telegram.** The owner asks a question and Claude answers from the real records, through a few read-only tools given to it directly (wallet, positions, fills and trades, daily results, risk state, events). No MCP server for now: the bot is our own program, so direct tools do the same with fewer parts; MCP can be added later if the owner wants to ask from the Claude app.
+  - **Safety rules for both:** only the owner's Telegram account is answered, everyone else is ignored; the chat is read-only and has no tool that places, cancels or changes an order, changes a limit, or changes the trading mode; no secret is ever sent; every call counts against the AI daily budget, with its own cap so chatting can never use up the judge's budget; text coming from Telegram is treated as a question, never as an instruction to the app. It explains what happened; it does not predict prices.
+  - **Gate for these:** the owner receives a daily report and checks two of its numbers against `GET /performance/daily`; he asks one question about a real trade and checks the answer against Postman; a message from another Telegram account gets no answer; a test shows the chat has no tool that changes anything.
 
 ### Stage 11: Testnet run
 

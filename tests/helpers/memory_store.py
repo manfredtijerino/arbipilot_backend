@@ -9,9 +9,18 @@ in `tests/database/`.
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
-from database.models import PasswordResetCode, RefreshToken, User
+from database.models import (
+    PaperAccount,
+    PaperFill,
+    PaperPosition,
+    PasswordResetCode,
+    RefreshToken,
+    RiskStateRow,
+    User,
+)
 from database.repositories.errors import DuplicateRow
 
 
@@ -160,11 +169,92 @@ class MemoryCodes:
         return True
 
 
+def _money(value: Decimal | None) -> Decimal | None:
+    """Money as the database column `Numeric(28, 8)` gives it back."""
+    return None if value is None else value.quantize(Decimal("0.00000001"))
+
+
+class MemoryPaper:
+    """The paper account's tables, kept in plain Python objects."""
+
+    MONEY = ("quantity", "price", "notional", "fee", "realized_pnl", "cash_after")
+
+    def __init__(self) -> None:
+        self.account: PaperAccount | None = None
+        self.held: dict[str, PaperPosition] = {}
+        self.filled: list[PaperFill] = []
+        self.risk_state: RiskStateRow | None = None
+
+    async def get_account(self, lock: bool = False) -> PaperAccount | None:
+        return self.account
+
+    async def create_account(self, cash: Decimal, now: datetime) -> PaperAccount:
+        self.account = PaperAccount(
+            id=1, cash=_money(cash), created_at=now, updated_at=now
+        )
+        return self.account
+
+    async def set_cash(self, cash: Decimal, now: datetime) -> None:
+        self.account.cash, self.account.updated_at = _money(cash), now
+
+    async def positions(self) -> list[PaperPosition]:
+        return [self.held[symbol] for symbol in sorted(self.held)]
+
+    async def save_position(
+        self, symbol: str, quantity: Decimal, cost: Decimal, now: datetime
+    ) -> None:
+        if quantity <= 0:
+            self.held.pop(symbol, None)
+        elif symbol in self.held:
+            row = self.held[symbol]
+            row.quantity, row.cost, row.updated_at = _money(quantity), _money(cost), now
+        else:
+            self.held[symbol] = PaperPosition(
+                symbol=symbol,
+                quantity=_money(quantity),
+                cost=_money(cost),
+                opened_at=now,
+                updated_at=now,
+            )
+
+    async def add_fill(self, *, now: datetime, **fields: object) -> PaperFill:
+        for name in self.MONEY:
+            fields[name] = _money(fields[name])
+        fill = PaperFill(id=uuid.uuid4(), created_at=now, **fields)
+        self.filled.append(fill)
+        return fill
+
+    async def fills(self, limit: int, offset: int = 0) -> list[PaperFill]:
+        newest_first = list(reversed(self.filled))
+        return newest_first[offset : offset + limit]
+
+    async def get_risk_state(self) -> RiskStateRow | None:
+        return self.risk_state
+
+    async def save_risk_state(
+        self,
+        day: date | None,
+        day_start_equity: Decimal,
+        daily_pause: bool,
+        outside_pause: str,
+        now: datetime,
+    ) -> None:
+        self.risk_state = RiskStateRow(
+            id=1,
+            day=day,
+            day_start_equity=_money(day_start_equity),
+            daily_pause=daily_pause,
+            outside_pause=outside_pause,
+            updated_at=now,
+        )
+
+
 class MemoryStore:
     def __init__(self) -> None:
         self.users = MemoryUsers()
         self.tokens = MemoryTokens()
         self.codes = MemoryCodes()
+        self.paper = MemoryPaper()
         self.commits = 0
 
     async def commit(self) -> None:

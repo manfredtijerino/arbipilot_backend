@@ -98,6 +98,16 @@ class RiskReport:
     orders_last_minute: int
 
 
+@dataclass(frozen=True)
+class RiskState:
+    """The part of the engine's memory that is saved in the database."""
+
+    day: date | None  # the UTC day the daily loss is counted for
+    day_start_equity: Decimal
+    daily_pause: bool  # the daily loss limit was reached on `day`
+    outside_pause: str  # the kill switch's reason, or "" when not paused
+
+
 def market_view(market: MarketData, symbol: str) -> MarketView:
     """What the live market data knows about one pair, for the engine.
 
@@ -181,6 +191,34 @@ class RiskEngine:
 
     def resume(self) -> None:
         self._outside_pause = ""
+
+    # --- surviving a restart ---
+
+    def state(self) -> "RiskState":
+        """What must be written down so a restart forgets nothing."""
+        return RiskState(
+            self._day, self._day_start_equity, self._daily_pause, self._outside_pause
+        )
+
+    def restore(self, state: "RiskState") -> None:
+        """Take back what was written down before the restart.
+
+        A stored day needs a usable starting equity: anything else is refused,
+        because a bad baseline would switch the daily pause off.
+        """
+        equity = state.day_start_equity
+        if state.day is not None and not (
+            _money(equity) and 0 < equity <= LARGEST_NUMBER
+        ):
+            raise ValueError("the stored day has no usable starting equity")
+        if type(state.daily_pause) is not bool or not isinstance(
+            state.outside_pause, str
+        ):
+            raise ValueError("the stored risk state is not readable")
+        self._day = state.day
+        self._day_start_equity = equity if state.day is not None else ZERO
+        self._daily_pause = state.daily_pause if state.day is not None else False
+        self._outside_pause = state.outside_pause.strip()
 
     # --- what it remembers ---
 

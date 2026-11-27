@@ -4,7 +4,7 @@ The owner's numbers (2026-11-27): 8% per trade, 2% daily loss, 3 trades open,
 one per pair, 8 orders a minute, 300 USDT to start.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal as D
 from typing import Any
 
@@ -15,7 +15,14 @@ from exchange.filters import SymbolRules
 from services.errors import MarketNotReady, UnknownSymbol
 from services.market_service import SymbolsView, Ticker
 from trading.account import AccountSnapshot, Position
-from trading.risk import MarketView, OrderRequest, RiskEngine, Side, market_view
+from trading.risk import (
+    MarketView,
+    OrderRequest,
+    RiskEngine,
+    RiskState,
+    Side,
+    market_view,
+)
 
 NOON = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
 
@@ -678,3 +685,31 @@ def test_the_engine_refuses_limits_it_cannot_enforce() -> None:
     two_per_pair = LIMITS.model_copy(update={"max_positions_per_symbol": 2})
     with pytest.raises(ValueError, match="one position per pair"):
         RiskEngine(two_per_pair)
+
+
+# --- surviving a restart ---
+
+
+def test_the_engine_gives_back_what_it_must_remember() -> None:
+    engine = RiskEngine(LIMITS)
+    assert engine.state() == RiskState(None, D(0), False, "")
+    state = RiskState(date(2026, 1, 1), D("300"), True, "kill switch")
+    engine.restore(state)
+    assert engine.state() == state
+    fresh = RiskEngine(LIMITS)
+    fresh.restore(engine.state())
+    assert fresh.state() == state
+
+
+@pytest.mark.parametrize("equity", ["0", "-5", "NaN", "Infinity", "10000000000000"])
+def test_a_stored_day_without_a_usable_start_is_refused(equity: str) -> None:
+    engine = RiskEngine(LIMITS)
+    with pytest.raises(ValueError, match="no usable starting equity"):
+        engine.restore(RiskState(date(2026, 1, 1), D(equity), True, ""))
+    assert engine.state().day is None  # nothing was taken over
+
+
+def test_a_stored_state_without_a_day_restores_only_the_outside_pause() -> None:
+    engine = RiskEngine(LIMITS)
+    engine.restore(RiskState(None, D("NaN"), True, "  stopped  "))
+    assert engine.state() == RiskState(None, D(0), False, "stopped")

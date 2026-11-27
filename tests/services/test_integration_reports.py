@@ -489,7 +489,7 @@ async def test_database_unreachable(
 def test_the_latest_migration_is_read_from_the_files() -> None:
     from database.migrations.head import latest_migration
 
-    assert latest_migration() == "0002"
+    assert latest_migration() == "0003"
 
 
 # --- Claude ---
