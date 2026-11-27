@@ -163,17 +163,137 @@ Body: `{"email": "...", "code": "493 201", "new_password": "..."}` (the space in
 
 Body: `{"display_name": "Manfred"}`. The field is required; `null` or `""` clears the name. `200` with the updated profile. The email cannot be changed.
 
-## Integration checks
+## Connection checks
+
+One request per outside service. Each answers `200` when the service works and `503` when it does not, with the same body either way.
 
 | Method | Path | Login | Dev only | What it does | Status |
 |---|---|---|---|---|---|
-| GET | `/integrations/binance` | Yes | No | Tests the Binance connection: reachable, clock difference, keys valid, trading allowed, withdrawals disabled, fee rates. | Planned |
-| GET | `/integrations/binance/balances` | Yes | No | Returns the Spot balances for USDT and BNB. | Planned |
-| GET | `/integrations/database` | Yes | No | Tests the database: name, version, latest migration applied. | Planned |
-| GET | `/integrations/claude` | Yes | No | Tests the Claude API key and model; returns today's usage against the budget. | Planned |
-| POST | `/integrations/telegram/test` | Yes | No | Sends a test message to the owner's Telegram. | Planned |
-| POST | `/integrations/healthchecks/test` | Yes | No | Sends a test ping to Healthchecks.io. | Planned |
-| GET | `/integrations/server` | Yes | No | Reports on the machine the app runs on: public address, uptime, memory, disk, clock sync. | Planned |
+| GET | `/integrations/binance` | Yes | No | Tests the Binance connection: reachable, clock difference, keys valid, trading allowed, withdrawals disabled, fee rates. | **Built** |
+| GET | `/integrations/binance/balances` | Yes | No | Returns the Spot balances for USDT and BNB. | **Built** |
+| GET | `/integrations/database` | Yes | No | Tests the database: name, version, latest migration applied. | **Built** |
+| GET | `/integrations/claude` | Yes | No | Tests the Claude API key and model. Today's usage against the budget arrives with the AI budget (stage 9). | **Built** |
+| POST | `/integrations/telegram/test` | Yes | No | Sends a test message to the owner's Telegram. | **Built** |
+| POST | `/integrations/healthchecks/test` | Yes | No | Sends a test ping to Healthchecks.io. | **Built** |
+| GET | `/integrations/server` | Yes | No | Reports on the machine the app runs on: public address, uptime, memory, disk, clock sync. | **Built** |
+
+### What every connection check answers
+
+| Field | Meaning |
+|---|---|
+| `status` | `"ok"`: it works. `"failed"`: it does not (HTTP `503`). `"not_configured"`: the setting is empty on this machine on purpose (HTTP `200`). |
+| `detail` | When failed: what is wrong, in plain words. Otherwise empty or a note. Never contains a key, a token or an address that is a secret. |
+
+A field that is `null` means "could not be checked here" or "Binance did not say". A missing answer is never read as safe: it fails the check. None of these requests places an order or moves money; the Binance ones only read.
+
+They cannot be run in a loop, because each one calls an outside service and Binance counts every call against the address the trading loop also uses:
+- A `GET` check's answer is reused for 15 seconds. Asking again within that time returns the same answer without calling the service.
+- The two `POST` checks send something real, so each works at most once a minute. Sooner than that: `429` `too_many_requests` with a `Retry-After` header.
+
+If the database is down, every endpoint that needs login answers `503` `database_unavailable`, because checking the token needs the database.
+
+### `GET /integrations/binance`
+
+```json
+{
+  "status": "ok",
+  "detail": "",
+  "host": "api.binance.com",
+  "reachable": true,
+  "clock_difference_ms": 60,
+  "keys": [
+    {
+      "name": "testnet",
+      "exchange": "testnet",
+      "ok": true,
+      "valid": true,
+      "trading_allowed": true,
+      "withdrawals_enabled": null,
+      "ip_restricted": null,
+      "spot_only": null,
+      "maker_fee": "0.00100000",
+      "taker_fee": "0.00100000",
+      "detail": "the testnet has no withdrawals and no IP lock, so those two cannot be checked here"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `host` | The Binance address used for market data in the current trading mode. |
+| `reachable` | Binance answered and the clocks agree within 1000 ms. When `false`, no key is sent. |
+| `clock_difference_ms` | Binance's clock minus this machine's. |
+| `keys` | One entry per key present in `.env`: `testnet`, `read`, `trade`. The laptop holds only `testnet`. |
+| `keys[].valid` | Binance accepted the key and its signature. |
+| `keys[].trading_allowed` | The key may place Spot orders. Expected: `true` for `testnet` and `trade`, `false` for `read`. |
+| `keys[].withdrawals_enabled` | Must be `false`. `true` fails the check. Mainnet keys only; `null` on the testnet, which has no such setting. |
+| `keys[].ip_restricted` | The key only works from a fixed address. Must be `true` for mainnet keys; `null` on the testnet. |
+| `keys[].spot_only` | Margin, futures, options, internal transfers, universal transfers and portfolio margin are all off. Must be `true` for mainnet keys (the bot is Spot only); `null` on the testnet. |
+| `keys[].maker_fee`, `taker_fee` | The account's fee per side as Binance reports it, before the BNB discount. Text. The testnet reports zero. |
+| `keys[].ok` | Everything above is as it should be for this key. |
+
+### `GET /integrations/binance/balances`
+
+```json
+{
+  "status": "ok",
+  "detail": "pretend money on the Binance testnet",
+  "exchange": "testnet",
+  "balances": [
+    {"asset": "USDT", "free": "10000.00000000", "locked": "0.00000000", "total": "10000.00000000"},
+    {"asset": "BNB", "free": "1.00000000", "locked": "0.00000000", "total": "1.00000000"}
+  ]
+}
+```
+
+`exchange` says where the numbers come from. In testnet mode, and on the laptop (which has no mainnet key), it is `"testnet"`. On the server in shadow or live mode it is `"mainnet"`, read with the read key. `free` can be used now, `locked` is held by open orders. Always both assets, `"0"` when Binance lists none.
+
+### `GET /integrations/database`
+
+```json
+{"status": "ok", "detail": "", "name": "arbipilot_dev", "version": "18.6", "applied_migration": "0002", "latest_migration": "0002"}
+```
+
+`applied_migration` is what the tables are at; `latest_migration` is what the code expects. When they differ the check fails.
+
+### `GET /integrations/claude`
+
+```json
+{"status": "ok", "detail": "usage against the daily budget is not tracked yet", "model": "claude-sonnet-5-5", "usage_today_usd": null, "daily_budget_usd": null}
+```
+
+Looks the model up by name, which proves the key works and costs no tokens. The two usage fields are `null` until stage 9.
+
+### `GET /integrations/server`
+
+```json
+{
+  "status": "ok",
+  "detail": "",
+  "environment": "development",
+  "app_uptime_seconds": 300,
+  "machine_uptime_seconds": 86400,
+  "memory_total_mb": 16384,
+  "memory_available_mb": 8192,
+  "disk_total_gb": 460.0,
+  "disk_free_gb": 120.5,
+  "public_ip": "203.0.113.7",
+  "expected_public_ip": null,
+  "public_ip_matches": null,
+  "clock_difference_ms": 60
+}
+```
+
+The uptime, memory and disk fields are `null` (and the check fails) only if the machine refuses to report them. `public_ip` is the address the internet sees this machine as. On the server `expected_public_ip` is the address the Binance keys are locked to (`EXPECTED_PUBLIC_IP`), and the check fails when the two differ. On the laptop nothing is expected, so `public_ip_matches` is `null`.
+
+### `POST /integrations/telegram/test`
+
+No body. Sends one real message. `{"status": "ok", "detail": "message sent; look at Telegram"}`.
+
+### `POST /integrations/healthchecks/test`
+
+No body. Sends one real ping. On the laptop: `{"status": "not_configured", "detail": "HEALTHCHECKS_PING_URL is empty; it is filled in on the server only"}`.
 
 ## Market data
 

@@ -17,7 +17,8 @@ from api.router import api_router
 from config.database import dispose_engine
 from config.settings import Settings
 from config.version import APP_VERSION
-from services.integration_service import CheckResult, ReadinessCache
+from services import clock
+from services.integration_service import CheckResult, CheckThrottle, ReadinessCache
 
 OK = "✔"
 FAILED = "✖"
@@ -61,7 +62,11 @@ def create_app(settings: Settings) -> FastAPI:
         lifespan=_lifespan,
     )
     app.state.settings = settings
+    # When this app object was made; `GET /integrations/server` reports the uptime.
+    app.state.started_at = clock.utc_now()
     app.state.readiness = ReadinessCache()
+    # Keeps the `/integrations` checks from being run in a loop.
+    app.state.check_throttle = CheckThrottle()
     # The database session maker. Made on the first request that needs it.
     app.state.sessions = None
     # Off until `server.py` has seen the Claude API check pass at startup.

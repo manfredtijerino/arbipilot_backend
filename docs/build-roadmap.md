@@ -42,8 +42,8 @@ From `docs/project-brief.md` §2. Each objective has a stage where it is built a
 |---|---|---|---|
 | 1 | Foundation and connections | 2 | **Passed 2026-11-23.** Owner started the app, ran both requests in Postman (200), approved. Commit `215c7b8` on `feature/foundation` |
 | 2 | Tables and migrations | 0 | **Passed 2026-11-24.** Migrations `0001` and `0002` on `arbipilot_dev` and `arbipilot_test`; owner checked the tables in pgAdmin and approved |
-| 3 | Login and users | 9 | Built 2026-11-24. Gate open: owner's Postman test and approval |
-| 4 | Connection checks | 7 | Not started |
+| 3 | Login and users | 9 | **Passed 2026-11-26.** Owner ran all nine endpoints from his own Postman collection, checked the `users` row in pgAdmin and approved. Commit `7a3ab99`, merged to `main` by pull request #1 (`8bf4847`) |
+| 4 | Connection checks | 7 | **Passed 2026-11-27.** Owner built the seven requests in his own Postman collection, ran them against development and approved. Branch `feature/connection-checks`. Still to prove at stage 12 with the mainnet keys: withdrawals off, IP lock, Spot only |
 | 5 | Market data | 3 | Not started |
 | 6 | Risk limits and the risk engine | 1 | Blocked: needs owner action 0 |
 | 7 | Strategy and honest paper fills | 1 | Blocked: needs owner action 0 |
@@ -101,6 +101,7 @@ Claude Code updates this table when a gate is passed, with the date.
 - **Example:** `GET /integrations/binance` reports reachable, clock difference 60 ms, key valid, trading allowed, withdrawals disabled.
 - **Endpoints:** `GET /integrations/binance`, `/integrations/binance/balances`, `/integrations/database`, `/integrations/claude`, `/integrations/server`, `POST /integrations/telegram/test`, `/integrations/healthchecks/test`.
 - **Gate:** the owner runs all seven in Postman; the Telegram test message arrives; the Binance check confirms withdrawals are disabled on the key.
+- **Note (2026-11-26):** Binance's testnet has no withdrawals and no key settings, so on the laptop those fields are `null`. The check for the real keys (withdrawals off, locked to an IP address, Spot only) is built and tested with pretend answers, and is proven for real at stage 12 on the server.
 
 ### Stage 5: Market data
 
@@ -109,6 +110,10 @@ Claude Code updates this table when a gate is passed, with the date.
 - **Example:** `GET /market/ticker/BTCUSDT` returns the latest price; one recorded night of prices replays in a test in seconds.
 - **Built:** the Binance client, each pair's minimum order value and step sizes read at startup, the live stream with automatic reconnect, the recorder.
 - **Endpoints:** `GET /market/symbols`, `/market/ticker/{symbol}`, `/market/stream/status`.
+- **Carry-over from the stage 4 reviews (Binance client):**
+  - One long-lived shared HTTP client instead of a new one per call; it must never follow redirects (a redirect would carry the key header to another host).
+  - Read Binance's `Retry-After` and used-weight headers and slow down before a limit is hit; a ban on the server's address also stops trading.
+  - Parse prices and amounts as `Decimal` from the start (`parse_float=Decimal`), never through a float.
 - **Gate:** the three requests pass in Postman; the stream stays connected for one hour and reconnects by itself after a forced drop; a recorded file exists and replays in a test.
 
 ### Stage 6: Risk limits and the risk engine
@@ -137,6 +142,12 @@ Claude Code updates this table when a gate is passed, with the date.
 - **Why:** Because the same path must be used in paper, testnet and live mode, so that what was tested is what trades; and the owner must be able to stop it at once.
 - **Example:** `POST /trading/kill` pauses trading and cancels open orders; after a restart the app is still paused until `POST /trading/resume`.
 - **Endpoints:** `GET /trading/status`, `POST /trading/kill`, `/trading/resume`, `/trading/orders/test` (development only), `GET /orders`.
+- **Carry-over from the stage 4 reviews (must be done before any order is signed):**
+  - Sign with the local clock corrected by a recently measured offset per host, or refuse a clock more than 500 ms ahead. Today's 1000 ms tolerance leaves no margin on the "ahead" side, where Binance refuses at 1000 ms.
+  - An error type for orders that carries Binance's code, the HTTP status and `Retry-After` as fields. The read-only one carries a sentence only.
+  - A timeout on an order means "outcome unknown": look the order up by its client order ID, never send it again. The read-only handler must not be reused for orders.
+  - One function that picks the order key: none in shadow, the testnet key in testnet, the trade key only in live. The router never picks from the list of configured keys itself.
+  - Compare the fee Binance charged on each fill with the configured fee.
 - **Gate:** the owner sends a test order from Postman in paper mode and follows it into pgAdmin; an oversized test order comes out shrunk; kill, restart, still paused, resume. `/kill` from Telegram is proven here if the development bot exists, otherwise at stage 12.
 
 ### Stage 9: AI judge and its budget

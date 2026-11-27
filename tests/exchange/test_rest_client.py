@@ -219,3 +219,31 @@ async def test_unreadable_answer_is_reported(
     async with client_answering(lambda request: response) as client:
         with pytest.raises(ExchangeCheckError, match="could not read"):
             await check_exchange(settings, client)
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "https://api.binance.com#x",
+        "https://api.binance.com:8443",
+        "https://api.binance.com:port",
+        "https://user@api.binance.com",
+        "https://user:pw@api.binance.com",
+        "https://api.binance.com?x=1",
+        "https://api.binance.com/api",
+        "https://api.binance.com@example.test",
+        "https://api.binance.com.example.test",
+    ],
+)
+def test_the_binance_address_must_be_the_bare_host(
+    make_settings: Callable[..., Settings], address: str
+) -> None:
+    with pytest.raises(ExchangeConfigError):
+        rest_base_url(make_settings(binance_base_url=address))
+
+
+def test_the_binance_address_is_rebuilt_from_the_checked_host(
+    make_settings: Callable[..., Settings],
+) -> None:
+    settings = make_settings(binance_base_url=" https://API.Binance.com/ ")
+    assert rest_base_url(settings) == "https://api.binance.com"

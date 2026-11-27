@@ -38,24 +38,42 @@ class ExchangeConfigError(Exception):
     """A Binance setting is missing or wrong. The message is safe to show."""
 
 
-def rest_base_url(settings: Settings) -> str:
-    """The REST address for the current trading mode, without a trailing slash.
+def mainnet_rest_url(settings: Settings) -> str:
+    """The real exchange's REST address, without a trailing slash.
 
-    `testnet` always uses the testnet host. `shadow` and `live` use
-    `BINANCE_BASE_URL`, which must be https and one of the real exchange's hosts.
+    `BINANCE_BASE_URL` must be https and one of the real exchange's hosts.
     """
-    if settings.trading_mode == "testnet":
-        return TESTNET_REST_URL
-
     base_url = settings.binance_base_url.strip().rstrip("/")
     if not base_url:
         raise ExchangeConfigError("not configured (BINANCE_BASE_URL is empty in .env)")
     parts = urlsplit(base_url)
     if parts.scheme != "https":
         raise ExchangeConfigError("BINANCE_BASE_URL must start with https://")
-    if parts.hostname not in MAINNET_REST_HOSTS or parts.path or parts.query:
+    try:
+        extras = parts.port is not None or parts.username or parts.password
+    except ValueError:  # a port that is not a number
+        extras = True
+    if (
+        parts.hostname not in MAINNET_REST_HOSTS
+        or extras
+        or parts.path
+        or parts.query
+        or parts.fragment
+    ):
         raise ExchangeConfigError(
             "BINANCE_BASE_URL is not one of Binance's own addresses "
             "(expected https://api.binance.com)"
         )
-    return base_url
+    # Built again from the checked host, so nothing else from `.env` survives.
+    return f"https://{parts.hostname}"
+
+
+def rest_base_url(settings: Settings) -> str:
+    """The REST address for the current trading mode.
+
+    `testnet` always uses the testnet host. `shadow` and `live` use the real
+    exchange.
+    """
+    if settings.trading_mode == "testnet":
+        return TESTNET_REST_URL
+    return mainnet_rest_url(settings)

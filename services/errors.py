@@ -60,3 +60,22 @@ class TooManyAttempts(ServiceError):
             f"Too many wrong attempts. Try again in {retry_after_seconds} seconds."
         )
         self.retry_after_seconds = retry_after_seconds
+
+
+class TooManyRequests(ServiceError):
+    """The same check was asked for again too soon."""
+
+    status_code = 429
+    code = "too_many_requests"
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__(
+            f"This was done a moment ago. Try again in {retry_after_seconds} seconds."
+        )
+        self.retry_after_seconds = retry_after_seconds
+
+
+class DatabaseUnavailable(ServiceError):
+    status_code = 503
+    code = "database_unavailable"
+    message = "The database cannot be reached right now. Try again shortly."

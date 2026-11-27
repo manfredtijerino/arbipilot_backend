@@ -7,6 +7,7 @@ password or the connection address.
 
 import asyncio
 import logging
+from dataclasses import dataclass
 
 import asyncpg
 from sqlalchemy import text
@@ -150,3 +151,47 @@ async def check_database(settings: Settings) -> str:
         logger.warning("database check failed: %s", type(exc).__name__)
         raise DatabaseCheckError(describe_failure(exc, settings)) from None
     return settings.postgres_db
+
+
+@dataclass(frozen=True)
+class DatabaseFacts:
+    """What the database says about itself."""
+
+    name: str
+    version: str
+    # The migration the tables are at, or None when no migration ever ran.
+    applied_migration: str | None
+
+
+async def read_database_facts(
+    settings: Settings, engine: AsyncEngine | None = None
+) -> DatabaseFacts:
+    """Ask the database its name, its version and its migration. Or raises.
+
+    `engine` is this process's own engine unless a test passes another.
+    """
+    if not settings.database_is_configured:
+        raise DatabaseCheckError(
+            "not configured (POSTGRES_HOST or POSTGRES_PASSWORD is empty in .env)"
+        )
+    try:
+        async with asyncio.timeout(CONNECT_TIMEOUT_SECONDS + 5):
+            async with (engine or get_engine(settings)).connect() as connection:
+                name, version, has_table = (
+                    await connection.execute(
+                        text(
+                            "SELECT current_database(), "
+                            "current_setting('server_version'), "
+                            "to_regclass('public.alembic_version') IS NOT NULL"
+                        )
+                    )
+                ).one()
+                applied = None
+                if has_table:
+                    applied = await connection.scalar(
+                        text("SELECT version_num FROM alembic_version")
+                    )
+    except Exception as exc:  # noqa: BLE001 - every failure becomes one safe line
+        logger.warning("database facts failed: %s", type(exc).__name__)
+        raise DatabaseCheckError(describe_failure(exc, settings)) from None
+    return DatabaseFacts(name=name, version=version, applied_migration=applied)
