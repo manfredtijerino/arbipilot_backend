@@ -150,6 +150,7 @@ Claude Code updates this table when a gate is passed, with the date.
   - Alert when an exit is refused because the pair's rules are not loaded; consider keeping the last known rules across a restart.
   - Stage 8: the kill switch calls `RiskEngine.pause()` and `resume()`, and its state is stored so a restart stays paused. Consider a generous, alerting limit on sell orders per minute.
 - **Shared parts built 2026-11-27 (no strategy yet):** fee maths (`trading/fees.py`, rate `fees.taker_pct` in `decisions.yaml`, 0.1% until the owner confirms his rate), at-once paper fills (`trading/paper.py`), the paper account service (`services/paper_service.py`), and `GET /trading/positions`, `GET /trading/fills`, `POST /trading/orders/test` (development only).
+- **Shared parts approved by the owner on 2026-11-27:** he ran positions, fills, the test order (buy, second buy refused, sell) and the restart test in Postman against development; all matched. This is not the stage 7 gate: the strategy and `GET /signals` are still open.
 - **Left open by the reviews of the shared parts (must be handled where named):**
   - Stage 7, with the strategy: the trade-through rule and the delay for waiting orders are not modelled; today's fills are at-once only, so they must not be read as honest shadow results.
   - Stage 8: the kill switch must write its pause to `risk_state` in the same step (today a pause is written at the next piece of work), and the saved risk state must be restored at startup, before the trading loop, not at the first `/trading` request.
