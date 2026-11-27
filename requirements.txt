@@ -16,6 +16,8 @@ pydantic-settings==2.16.2
 pyyaml==6.0.3
 pyjwt==2.15.1
 argon2-cffi==25.1.0
+# Memory, disk and uptime of the machine, for GET /integrations/server (added 2026-11-26).
+psutil==7.2.2
 
 # Testing and code checks
 pytest==9.2.0

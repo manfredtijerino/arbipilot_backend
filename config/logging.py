@@ -26,6 +26,9 @@ NOISY_LIBRARIES = ("httpx", "httpx2", "httpcore", "httpcore2", "telegram")
 # A Telegram address looks like .../bot<numbers>:<letters>/sendMessage.
 TELEGRAM_TOKEN = re.compile(r"bot\d+:[A-Za-z0-9_-]+")
 
+# The signature on a signed Binance request. Not a key, but nobody's business.
+SIGNATURE = re.compile(r"signature=[0-9a-fA-F]{16,}")
+
 # Shorter values are not searched for: they would hide ordinary words.
 SHORTEST_SECRET = 8
 
@@ -55,6 +58,7 @@ class RedactingFormatter(logging.Formatter):
         line = super().format(record)
         for secret in self._secrets:
             line = line.replace(secret, HIDDEN)
+        line = SIGNATURE.sub(f"signature={HIDDEN}", line)
         return TELEGRAM_TOKEN.sub(f"bot{HIDDEN}", line)
 
 

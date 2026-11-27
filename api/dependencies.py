@@ -4,18 +4,22 @@
 and the token-getting `/auth` routes depends on it.
 """
 
+import logging
 from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.exc import DBAPIError
 
 from config.database import get_engine, session_factory
 from config.settings import Settings
 from database.models import User
 from database.repositories.store import Store
 from services import auth_service
-from services.errors import NotAuthenticated
+from services.errors import DatabaseUnavailable, NotAuthenticated
+
+logger = logging.getLogger(__name__)
 
 # auto_error=False: a missing header is answered by us, in the one error shape.
 _bearer = HTTPBearer(auto_error=False)
@@ -42,7 +46,13 @@ async def current_user(
     """The owner, proven by the access token in the Authorization header."""
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise NotAuthenticated
-    return await auth_service.authenticate(store, settings, credentials.credentials)
+    try:
+        return await auth_service.authenticate(store, settings, credentials.credentials)
+    except (DBAPIError, OSError, TimeoutError) as exc:
+        # Looking the owner up needs the database. When it is down, say so
+        # plainly instead of answering "something went wrong".
+        logger.error("login check failed: database error type=%s", type(exc).__name__)
+        raise DatabaseUnavailable from None
 
 
 StoreDep = Annotated[Store, Depends(get_store)]

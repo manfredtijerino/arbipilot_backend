@@ -53,6 +53,16 @@ def test_a_telegram_address_never_shows_the_bot_token(make_settings):
     assert "bot[hidden]/sendMessage" in line
 
 
+def test_a_binance_request_signature_is_hidden(make_settings):
+    signature = "ab12" * 16
+    message = (
+        f"GET https://api.binance.com/api/v3/account?timestamp=1&signature={signature}"
+    )
+    line = build_formatter(make_settings()).format(record(message))
+    assert signature not in line
+    assert line.endswith("timestamp=1&signature=[hidden]")
+
+
 def test_a_secret_inside_an_error_traceback_is_hidden(make_settings):
     settings = make_settings(telegram_bot_token="test-token-0001")
     try:
