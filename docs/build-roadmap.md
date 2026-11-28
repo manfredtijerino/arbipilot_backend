@@ -343,6 +343,30 @@ Said plainly: the rule already failed on three coins in these same years. Trying
 4. Nothing about what happened to a coin after 30 October 2022 may be used. A coin that later crashed or was removed from Binance stays in the ten.
 5. The seven names, and every coin skipped with its reason, are written here and committed **before** any candle of theirs is downloaded.
 
+**The seven, found on 2026-11-27 after the rules above were committed (commit `4f16d79`), and before any candle of the test period was downloaded.** Read from `coinmarketcap.com/historical/20221030/` ("Historical Snapshot - 30 October 2022"); the first 20 rows were enough.
+
+| Rank on the list | Coin | Decision |
+|---|---|---|
+| 1 | Bitcoin (BTC) | skipped: already one of the ten |
+| 2 | Ethereum (ETH) | skipped: already one of the ten |
+| 3 | Tether (USDT) | skipped: stablecoin |
+| 4 | BNB | skipped: already one of the ten |
+| 5 | USD Coin (USDC) | skipped: stablecoin |
+| 6 | XRP | **taken (1)** |
+| 7 | Binance USD (BUSD) | skipped: stablecoin |
+| 8 | Dogecoin (DOGE) | **taken (2)** |
+| 9 | Cardano (ADA) | **taken (3)** |
+| 10 | Solana (SOL) | **taken (4)** |
+| 11 | Polygon (MATIC) | **taken (5)** |
+| 12 | Polkadot (DOT) | **taken (6)** |
+| 13 | Shiba Inu (SHIB) | **taken (7)** |
+
+Not needed, because seven were found: Dai (14), TRON (15) and everything below.
+
+The ten, in rank order: BTCUSDT, ETHUSDT, BNBUSDT, XRPUSDT, DOGEUSDT, ADAUSDT, SOLUSDT, MATICUSDT, DOTUSDT, SHIBUSDT.
+
+How "a candle on every day of October 2022" was checked without looking at a price: for each of the seven, Binance's monthly file for October 2022 was downloaded, its checksum verified, the number of different days in it counted (31 for each), and the file deleted. Only the count was displayed. October 2022 is before the test period.
+
 **The rules of the replay.** As in stage 7b (daily candles, UTC days, long only, a signal at the close of day D becomes an order at the open of day D+1, no peeking), with these additions:
 
 - *Size and limits, the same as the live bot's today:* 24 USDT per trade, one trade per coin, and **at most 3 trades open at once** (`max_open_positions`). The bot starts with 72 USDT. Profits are not re-invested.
@@ -393,6 +417,7 @@ Said plainly: the rule already failed on three coins in these same years. Trying
 - **Split by the owner on 2026-11-27 into two parts:**
   - **Part A (built 2026-11-27, on `feature/order-path`):** the stop button (`POST /trading/kill`, `/trading/resume`, saved in the same step, restored at startup), `GET /trading/status`, the order diary (`orders` table, migration 0004, `GET /orders`), ticket numbers (`client_order_id`, unique in the database), the router (`trading/router.py`: only `shadow` has a road), and the money checks from the stage 7 reviews. With the owner's three additions, each proven by a test: resume does not clear the daily-loss pause; a sale can only close or shrink a position; the ticket is unique in the database.
   - **Part B (NOT built; waits until a strategy passes its test, owner's decision 2026-11-27):** signed orders to Binance testnet, with everything in the stage 4 carry-over list above, and cancelling waiting orders on kill.
+  - **Part A approved by the owner on 2026-11-27 (commit `4f16d79`):** with the app started by himself (shown by `app_started_at`), he saw in Postman: the same ticket buying once; kill; a buy refused while stopped; a sale working while stopped; a sale of "1" BTC selling only the 0.00039 held; the stop still on after a restart; resume; and the diary listing all of it. This is not the stage 8 gate: part B is not built.
   - **`/kill` from Telegram:** not built in part A (it needs a listener for incoming Telegram messages); proven at stage 12, or earlier with the Telegram chat of stage 10.
 - **Left open by the reviews of part A (must be handled where named):**
   - Before live: the stop button needs the database twice (the login check and the save). With the database down, kill answers 503 and pauses nothing. Harmless while every order also needs the database; before any path can trade without it, kill must pause in memory on a valid token alone, or the owner needs a second stop path. Also consider an alert on every kill and resume, and asking for the password again on resume.
