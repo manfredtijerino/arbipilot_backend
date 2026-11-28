@@ -7,3 +7,4 @@ The trading logic: loop, strategy, risk engine, order router, shadow fills, reco
 - `fees.py`: fee maths. The rate comes from `fees` in `decisions.yaml`.
 - `router.py`: where an approved order is sent. Only `shadow` has a road (the paper account); `testnet` and `live` are refused until they are built.
 - `paper.py`: pretend fills for at-once orders (buy at the ask, sell at the bid), plain arithmetic.
+- `trend_ten.py`: the trend rule replayed on ten coins with three places (stage 7c). Past prices only; not used by the live bot.

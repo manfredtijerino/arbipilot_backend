@@ -157,6 +157,21 @@ def test_a_month_that_is_not_downloaded_is_named(tmp_path: Path) -> None:
         load_candles("BTCUSDT", (2024, 12), (2024, 12), tmp_path)
 
 
+def test_a_month_the_archive_does_not_have_is_left_empty_when_named(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "BTCUSDT-1m-2024-12.zip").write_bytes(zipped(row(DEC_2024)))
+    candles = load_candles(
+        "BTCUSDT", (2024, 12), (2025, 1), tmp_path, absent=[(2025, 1)]
+    )
+    assert candles.present == 1 and len(candles) == (31 + 31) * 24 * 60
+    # Only the named month may be missing.
+    with pytest.raises(HistoryError, match="BTCUSDT-1m-2024-12.zip is not downloaded"):
+        load_candles(
+            "BTCUSDT", (2024, 12), (2025, 1), tmp_path / "x", absent=[(2025, 1)]
+        )
+
+
 def test_a_candle_from_another_month_is_refused(tmp_path: Path) -> None:
     (tmp_path / "BTCUSDT-1m-2024-12.zip").write_bytes(zipped(row(JAN_2025 * 1000)))
     with pytest.raises(HistoryError, match="outside its month"):

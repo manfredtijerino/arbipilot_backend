@@ -14,6 +14,7 @@ import hashlib
 import io
 import zipfile
 from array import array
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -177,8 +178,14 @@ def load_candles(
     last: tuple[int, int],
     folder: Path = HISTORY_FOLDER,
     interval: str = "1m",
+    absent: Collection[tuple[int, int]] = (),
 ) -> Candles:
-    """Every month from `first` to `last`, read from the downloaded zips."""
+    """Every month from `first` to `last`, read from the downloaded zips.
+
+    `absent` names the months the archive does not have for this pair (a
+    coin removed from Binance): they are left without candles. Any other
+    month whose file is not there is an error.
+    """
     step = INTERVALS[interval]
     start = minute_of(*first)
     year, month = last
@@ -186,6 +193,8 @@ def load_candles(
     candles = empty_candles(symbol, start, (end - start) // step)
     candles.step = step
     for year, month in months_between(first, last):
+        if (year, month) in absent:
+            continue
         path = folder / file_name(symbol, year, month, interval)
         try:
             content = path.read_bytes()

@@ -393,6 +393,17 @@ How "a candle on every day of October 2022" was checked without looking at a pri
 
 **The procedure.** The run happens **once**. Its full output is written to `docs/trend-ten-result.txt` and committed; the run refuses to start when that file exists. The candles of the seven coins are downloaded by the run itself and are not looked at before it.
 
+**Details of the replay, fixed on 2026-11-28 when the code was written, before any spread was known and before any candle of the seven was downloaded.** They fill gaps in the rules above and change nothing already written. The code is `trading/trend_ten.py` and `scripts/trend_ten_run.py`.
+
+- *How the costs add up:* a buy fills at the price × (1 + 0.05% + half the spread); a sale at the price × (1 − 0.05% − half the spread); then the fee is taken from each order.
+- *The spread numbers used:* exactly as `spread_measure.py summary` prints them, in percent with 5 decimals.
+- *Every trade is 24 USDT,* also after losses, as in stage 7b.
+- *A removed coin* is one whose last candle is before 31 October 2026. Its last day gives no signal (there is no next day for the order).
+- *An order on a day without a candle:* a buy is dropped; a sale waits for the open of the coin's next candle.
+- *A buy signal for the last day of the period* is ignored, as in stage 7b.
+- *A month that Binance's archive does not have* is accepted only for MATICUSDT (the one coin known, from Binance's pair list, to be removed) and only at the end of its history. For the nine coins that still trade, data that stops early is a broken download, not a removal. Every file, also one already on the laptop, is checked against the checksum Binance publishes. A hole anywhere else, a failed download or a wrong checksum stops the run **before** anything is calculated; that does not count as the one run, and it may be started again. The one run counts from the moment the calculation starts.
+- *Checked before the run, on the three coins already opened only:* with the spread set to zero, the new code gives exactly stage 7b's known result on them (72 trades, bot +62.53 USDT with a 31.3% worst drop, buy-and-hold +104.62 USDT with 57.1%). So the new code plays the same rule.
+
 **The pass mark, at the 0.1% fee. All five must hold.**
 
 - (a) At least 20 trades, in the ten-coin run and in the seven-coin run.
