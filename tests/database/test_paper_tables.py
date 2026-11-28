@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from config.database import session_factory
 from config.decisions import parse_decisions
 from config.settings import Settings
+from database.repositories.errors import DuplicateRow
 from database.repositories.store import Store
 from services.paper_service import PaperTrading
 from tests.config.test_decisions import GOOD
@@ -127,8 +128,81 @@ async def test_the_database_refuses_impossible_rows(session: AsyncSession) -> No
     # A second wallet row, and a holding with a negative cost.
     assert await refused(lambda: paper.create_account(D("1"), NOW))
     assert await refused(lambda: paper.save_position("BTCUSDT", D("1"), D("-1"), NOW))
+    # Added by migration 0004: money that can never be negative.
+    assert await refused(lambda: paper.set_cash(D("-0.01"), NOW))
+    bad_cash = {**a_fill("order-4", NOW), "cash_after": D("-1")}
+    assert await refused(lambda: paper.add_fill(**bad_cash))
+    assert await refused(
+        lambda: paper.save_risk_state(date(2026, 1, 1), D("-1"), False, "", NOW)
+    )
     assert len(await paper.fills(50)) == 1
     assert (await paper.get_account()).cash == D("300")
+
+
+def an_order(ticket: str, now: datetime, **changes: object) -> dict:
+    return {
+        "client_order_id": ticket,
+        "mode": "shadow",
+        "symbol": "BTCUSDT",
+        "side": "BUY",
+        "requested_quantity": None,
+        "requested_amount": D("24"),
+        "status": "rejected",
+        "risk_outcome": "rejected",
+        "risk_code": "position_exists",
+        "risk_reason": "This pair already has a position.",
+        "quantity": None,
+        "price": None,
+        "fill_id": None,
+        "now": now,
+        **changes,
+    }
+
+
+async def test_the_order_diary_and_its_unique_ticket(session: AsyncSession) -> None:
+    store = Store(session)
+    await store.paper.create_account(D("300"), NOW)
+    fill = await store.paper.add_fill(**a_fill("ticket-1", NOW))
+    fill_id = fill.id  # read now: the row is forgotten after `expire_all`
+    filled = {"status": "filled", "fill_id": fill_id, "quantity": D("0.0004")}
+    await store.orders.add(**an_order("ticket-1", NOW, **filled, price=D("60000")))
+    await store.orders.add(**an_order("ticket-2", LATER))
+    await store.commit()
+    session.expire_all()
+
+    newest = await store.orders.newest(10)
+    assert [o.client_order_id for o in newest] == ["ticket-2", "ticket-1"]
+    assert [o.client_order_id for o in await store.orders.newest(1, 1)] == ["ticket-1"]
+    found = await store.orders.get_by_client_order_id("ticket-1")
+    assert (found.status, found.fill_id, found.quantity) == (
+        "filled",
+        fill_id,
+        D("0.0004"),
+    )
+    assert (await store.paper.fill_by_id(fill_id)).client_order_id == "ticket-1"
+    assert await store.orders.get_by_client_order_id("ticket-9") is None
+
+    # The database itself refuses a second order with the same ticket.
+    with pytest.raises(DuplicateRow):
+        await store.orders.add(**an_order("ticket-1", LATER))
+    await session.rollback()
+
+    async def refused(**changes: object) -> bool:
+        """Refused by a rule of the table, and not mistaken for a repeat."""
+        try:
+            await store.orders.add(**an_order("ticket-3", NOW, **changes))
+            await store.commit()
+        except DBAPIError:
+            await session.rollback()
+            return True
+        return False
+
+    assert await refused(side="HOLD")
+    assert await refused(mode="margin")
+    assert await refused(status="maybe")
+    assert await refused(status="filled")  # "filled" without a fill
+    assert await refused(fill_id=fill_id)  # a fill on a "rejected" order
+    assert len(await store.orders.newest(10)) == 2
 
 
 async def test_the_whole_paper_account_on_real_sql(
@@ -169,9 +243,62 @@ async def test_the_whole_paper_account_on_real_sql(
     assert (report.day, report.day_start_equity) == ("2026-01-01", D("300"))
     assert report.open_positions == 1
 
+    # A copy of the buy's ticket that slips past the check in code (the
+    # lookup is blinded here) is stopped by the database's "must be unique"
+    # rule, and everything that copy wrote is thrown away with it.
+    blinded = new_run()
+    ticket = bought.order.client_order_id
+
+    @asynccontextmanager
+    async def blind_store() -> AsyncIterator[Store]:
+        async with sessions() as session:
+            store = Store(session)
+
+            async def sees_nothing(_: str) -> None:
+                return None
+
+            store.orders.get_by_client_order_id = sees_nothing
+            yield store
+
+    blinded.open_store = blind_store
+    with pytest.raises(DBAPIError):
+        await blinded.place("BTCUSDT", Side.SELL, NOW, client_order_id=ticket)
+    kept = await new_run().wallet(NOW)
+    assert kept.cash == D("276.01763759")  # the copy's sale was not kept
+    assert [p.symbol for p in kept.positions] == ["BTCUSDT"]
+    assert len(await after.fills(50, 0, NOW)) == 1
+    assert len(await after.orders(50, 0, NOW)) == 1
+
     # One second later, so "newest first" has an order to show.
     sold = await after.place("BTCUSDT", Side.SELL, NOW + timedelta(seconds=1))
     assert sold.fill.realized_pnl == D("-0.04792081")
     final = await new_run().wallet(NOW)
     assert (final.cash, final.positions) == (D("299.95207919"), [])
     assert [f.side for f in await after.fills(50, 0, NOW)] == ["SELL", "BUY"]
+
+    # The diary has both orders, each tied to its fill by the ticket number.
+    diary = await after.orders(50, 0, NOW)
+    assert [(o.side, o.status) for o in diary] == [
+        ("SELL", "filled"),
+        ("BUY", "filled"),
+    ]
+    assert diary[1].client_order_id == bought.fill.client_order_id
+
+    # The same ticket again: nothing is done twice, on real SQL.
+    later = NOW + timedelta(seconds=2)
+    again = await after.place(
+        "BTCUSDT", Side.BUY, later, client_order_id=bought.order.client_order_id
+    )
+    assert again.repeated and again.fill.id == bought.fill.id
+    assert len(await after.orders(50, 0, NOW)) == 2
+
+    # The stop button: written at once, still on after a restart, then released.
+    await after.kill("integration test", later)
+    restarted = new_run()
+    await restarted.start(later)
+    status = await restarted.status(later)
+    assert status.kill_switch and status.kill_reason == "integration test"
+    blocked = await restarted.place("BTCUSDT", Side.BUY, later)
+    assert (blocked.decision.code, blocked.fill) == ("trading_paused", None)
+    assert (await restarted.resume(later)).kill_switch is False
+    assert (await new_run().status(later)).paused is False

@@ -105,6 +105,9 @@ class PaperOrderRequest(BaseModel):
     # allow, or to sell everything held.
     quantity: Decimal | None = None
     amount_usdt: Decimal | None = None
+    # The order's ticket number. Send the same one again and the order is
+    # not repeated: the first answer comes back. Left out, one is made.
+    client_order_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,36}$")
 
     @field_validator("quantity", "amount_usdt", mode="before")
     @classmethod
@@ -129,3 +132,63 @@ class PaperOrderResponse(BaseModel):
     code: str
     reason: str
     fill: FillItem | None  # null when nothing was traded
+    client_order_id: str  # the order's ticket number
+    repeated: bool  # true: this ticket was seen before, nothing was done again
+
+
+class OrderItem(_View):
+    """One row of the order diary."""
+
+    id: uuid.UUID
+    client_order_id: str
+    mode: str  # shadow, testnet or live
+    symbol: str
+    side: str
+    requested_quantity: Money | None
+    requested_amount: Money | None
+    status: str  # filled or rejected
+    risk_outcome: str
+    risk_code: str
+    risk_reason: str
+    quantity: Money | None  # what was traded; null when nothing was
+    price: Money | None
+    fill_id: uuid.UUID | None
+    created_at: datetime
+
+
+class OrdersResponse(BaseModel):
+    """`GET /orders`"""
+
+    limit: int
+    offset: int
+    orders: list[OrderItem]
+
+
+class KillRequest(BaseModel):
+    """`POST /trading/kill`. The body may be left out."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # A few words for the owner's own record. A stop button must not fail
+    # over how the reason is written: it is cleaned and cut, never refused.
+    reason: str = Field(default="", max_length=2000)
+
+
+class StatusResponse(_View):
+    """`GET /trading/status`, and the answer of kill and resume."""
+
+    environment: str
+    trading_mode: str
+    # When the app that is answering was started (UTC). After a restart this
+    # time is new: proof that the answer comes from the app just started.
+    app_started_at: datetime
+    state: Literal["running", "paused"]
+    pause_reason: str  # every reason, in plain words; "" when running
+    kill_switch: bool  # the stop button is pressed
+    kill_reason: str
+    daily_loss_pause: bool  # today's loss limit was reached
+    equity: Money | None  # null when a held pair has no known price
+    prices_stale: bool
+    open_positions: int
+    day: str
+    day_profit_or_loss: Money

@@ -123,6 +123,7 @@ Never bury a manual step inside a long answer. Never assume he did it: verify, t
 - End every session with `/session-recap`.
 - Lesson (2026-11-16): HTTP libraries log full request addresses at INFO, and Telegram's address contains the bot token. `config/logging.py` quietens them and hides secrets in every line; call `setup_logging()` before any network call, and pipe a first run of new network code through a mask before showing its output.
 - Lesson (2026-11-23): in `database/migrations/env.py`, any query run before Alembic starts opens a transaction; without `connection.commit()` after it, the migration reports success and is thrown away. The integration test "database is at the latest migration" catches this.
+- Lesson (2026-11-27): `pkill -f "python server.py"` does not stop the app on this Mac (the process is named `Python`, capital P); a forgotten app kept port 3000 with old code and answered the owner's Postman tests. Start it with `& PID=$!`, stop it with `kill $PID`, and check `lsof -iTCP:3000 -sTCP:LISTEN` shows nothing before and after.
 - When you learn a project-specific lesson, add one line here. Remove rules that no longer apply. Keep this file under 200 lines.
 
 ## Talking to the owner

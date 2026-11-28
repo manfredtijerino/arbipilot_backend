@@ -4,6 +4,7 @@
 the status lines, so every line is true by the time it is shown.
 """
 
+import logging
 import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -11,6 +12,7 @@ from dataclasses import dataclass, field
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import SQLAlchemyError
 
 from api.errors import register_error_handlers
 from api.router import API_PREFIX, api_router
@@ -25,6 +27,8 @@ from services.integration_service import CheckResult, CheckThrottle, ReadinessCa
 from services.market_service import MarketData
 from services.paper_service import PaperTrading
 from trading.risk import RiskEngine
+
+logger = logging.getLogger(__name__)
 
 OK = "✔"
 FAILED = "✖"
@@ -55,12 +59,23 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # The price stream runs for as long as the app serves. Only `server.py`
     # switches it on, so tests that build the app never open a connection.
     if app.state.background_work:
+        await _restore_risk_state(app)
         app.state.market.start()
     try:
         yield
         await app.state.market.stop()
     finally:
         await dispose_engine()
+
+
+async def _restore_risk_state(app: FastAPI) -> None:
+    """Give the risk engine its memory back (the stop button, the day's
+    loss pause) before anything can trade. When the database cannot be read
+    right now, nothing is lost: every order still loads it first."""
+    try:
+        await app.state.paper.start(clock.utc_now())
+    except (SQLAlchemyError, OSError, TimeoutError) as exc:
+        logger.error("risk state not restored at startup type=%s", type(exc).__name__)
 
 
 @asynccontextmanager
@@ -106,6 +121,7 @@ def create_app(settings: Settings, decisions: Decisions | None = None) -> FastAP
         app.state.risk,
         market=lambda: app.state.market,
         open_store=lambda: _open_store(app),
+        mode=settings.trading_mode,
     )
     # Off until `server.py` has seen the Claude API check pass at startup.
     # This is only the startup result: the trading loop (Day 3) keeps its own

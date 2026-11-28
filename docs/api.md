@@ -408,12 +408,12 @@ Errors: `404` `unknown_symbol` (not on the watch list), `422` (not a pair name),
 
 | Method | Path | Login | Dev only | What it does | Status |
 |---|---|---|---|---|---|
-| GET | `/trading/status` | Yes | No | Environment, mode, running or paused (and why), open positions, today's profit or loss. | Planned |
+| GET | `/trading/status` | Yes | No | Environment, mode, running or paused (and why), the stop button, open positions, today's profit or loss. | **Built** |
 | GET | `/trading/risk` | Yes | No | The current limits from `decisions.yaml` and how much of each is used today. | **Built** |
 | GET | `/trading/positions` | Yes | No | The paper account: free cash, what is held, and what it is worth now. | **Built** |
 | GET | `/trading/fills` | Yes | No | The pretend buys and sells, newest first (`limit`, `offset`). | **Built** |
-| POST | `/trading/kill` | Yes | No | Pauses trading and cancels open orders. | Planned |
-| POST | `/trading/resume` | Yes | No | Resumes trading after a pause. | Planned |
+| POST | `/trading/kill` | Yes | No | The stop button: no new trade is opened until resume. Survives a restart. (Cancelling waiting orders is added with the first order type that can wait.) | **Built** |
+| POST | `/trading/resume` | Yes | No | Releases the stop button. Does not undo the daily loss pause. | **Built** |
 | POST | `/trading/orders/test` | Yes | **Yes** | One pretend order through the risk engine, filled at once on the paper account at the live price. No real order is sent. (The order router joins this path in a later stage.) | **Built** |
 
 ### `GET /trading/risk`
@@ -464,7 +464,48 @@ The owner's limits, and how much of each is used right now. Money and shares are
 
 Money in every `/trading` answer is text with 8 decimals.
 
-What the risk engine does with an order: **approved**, **reduced** (code `position_cap` or `cash`: cut to the position cap or to the free cash, fee included), or **rejected** with one of these codes: `trading_paused`, `unknown_symbol`, `rules_stale`, `pair_not_trading`, `price_unavailable`, `price_stale`, `no_equity`, `daily_loss_pause`, `position_exists`, `max_open_positions`, `order_rate_limit`, `below_minimum`, `invalid_order`, `nothing_to_sell`, `cash` (no free cash at all).
+What the risk engine does with an order: **approved**, **reduced** (code `position_cap` or `cash`: cut to the position cap or to the free cash, fee included), or **rejected** with one of these codes: `trading_paused`, `unknown_symbol`, `rules_stale`, `pair_not_trading`, `price_unavailable`, `price_stale`, `no_equity`, `daily_loss_pause`, `position_exists`, `max_open_positions`, `order_rate_limit`, `below_minimum`, `invalid_order`, `nothing_to_sell`, `cash` (no free cash at all), `mode_not_built` (orders in testnet or live mode are not built yet), `ticket_reused` (the ticket number belongs to a different order).
+
+### `GET /trading/status`, `POST /trading/kill`, `POST /trading/resume`
+
+All three answer with the same shape:
+
+```json
+{
+  "environment": "development",
+  "trading_mode": "shadow",
+  "app_started_at": "2026-11-28T03:44:20.512345Z",
+  "state": "paused",
+  "pause_reason": "Trading is paused: going on holiday.",
+  "kill_switch": true,
+  "kill_reason": "going on holiday",
+  "daily_loss_pause": false,
+  "equity": "299.94819916",
+  "prices_stale": false,
+  "open_positions": 0,
+  "day": "2026-11-28",
+  "day_profit_or_loss": "0.00000000"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `app_started_at` | When the app that is answering was started (UTC). It changes at every restart, so it shows which copy of the app answered. |
+| `state` | `"running"`: new trades may be opened. `"paused"`: none is opened, for the reasons in `pause_reason`. Closing a trade is always allowed. |
+| `pause_reason` | Every reason in plain words, `""` when running: the stop button, the daily loss limit, or an account value that cannot be read right now. |
+| `kill_switch` / `kill_reason` | Whether the stop button is pressed, and the reason given. |
+| `daily_loss_pause` | Today's loss reached the limit. It ends by itself at the next UTC day, and `resume` does not end it. |
+| `equity`, `prices_stale`, `open_positions`, `day`, `day_profit_or_loss` | As in `GET /trading/risk` and `GET /trading/positions`. |
+
+**`POST /trading/kill`** — the body may be left out, or `{"reason": "a few words"}`. The reason is cleaned (one line, no invisible characters) and cut to 150 characters; a stop is never refused over how the reason is written. The stop is saved in the database in the same step, so a restart stays stopped. Pressing it twice is harmless. No order is waiting in paper mode, so there is nothing to cancel yet.
+
+**`POST /trading/resume`** — no body. It releases the stop button and nothing else: the two locks (the owner's button, the daily loss limit) are separate. If the release cannot be saved, trading stays stopped.
+
+| Error code | Status | When |
+|---|---|---|
+| `pause_not_saved` | 503 | Kill: trading is paused in the running app, but the database could not be written. A restart would forget it; press kill again. |
+| `database_unavailable` | 503 | Status or resume: the database could not be reached. Nothing changed. |
+| `invalid_input` | 422 | Kill: an unknown field, or a reason that is not text. |
 
 ### `GET /trading/positions`
 
@@ -506,7 +547,7 @@ The paper account as it is now. It starts with the `shadow.starting_equity_usdt`
 
 ### `POST /trading/orders/test` (development only)
 
-One pretend order. It passes the risk engine like every order, then fills at once: a buy at the best ask, a sale at the best bid, with the fee `fees.taker_pct` from `decisions.yaml`. In production this address does not exist (404, with or without a token).
+One test order on the road every order takes: asked for, risk engine, router, fill, diary (`GET /orders`). In shadow mode it fills at once on the paper account: a buy at the best ask, a sale at the best bid, with the fee `fees.taker_pct` from `decisions.yaml`. In production this address does not exist (404, with or without a token).
 
 ```json
 {"symbol": "BTCUSDT", "side": "BUY", "amount_usdt": "24"}
@@ -518,6 +559,7 @@ One pretend order. It passes the risk engine like every order, then fills at onc
 | `side` | Required. `"BUY"` or `"SELL"`. |
 | `quantity` | Optional, text. How many coins. |
 | `amount_usdt` | Optional, text, buys only. How many USDT to spend. Not together with `quantity`. |
+| `client_order_id` | Optional. The order's ticket number: 1 to 36 letters, digits, `-` or `_`. Send the same one again and the order is not repeated; the first answer comes back with `"repeated": true`. Left out, one is made. The database itself refuses two orders with one ticket. |
 
 With no size, a buy asks for as much as the limits allow (8% of the account) and a sale sells everything held. A sale that would leave a rest too small for Binance to ever sell sells everything instead.
 
@@ -540,12 +582,15 @@ With no size, a buy asks for as much as the limits allow (8% of the account) and
     "risk_outcome": "reduced",
     "risk_code": "position_cap",
     "created_at": "2026-11-27T10:00:00Z"
-  }
+  },
+  "client_order_id": "6a3f0a0e-7f0f-4a61-8a0b-2f4f6e5d1c22",
+  "repeated": false
 }
 ```
 
 | Field | Meaning |
 |---|---|
+| `client_order_id` / `repeated` | The order's ticket number, and whether this ticket was seen before (then nothing was done again). |
 | `outcome` / `code` / `reason` | What the risk engine said. A refusal is still a 200: the answer is "no", not an error. |
 | `fill` | The trade that was recorded, or `null` when nothing was traded. |
 | `fill.notional` | Quantity times price. |
@@ -564,12 +609,52 @@ With no size, a buy asks for as much as the limits allow (8% of the account) and
 |---|---|---|---|---|---|
 | GET | `/trades` | Yes | No | Lists trades, newest first, with filters for pair, date and mode. | Planned |
 | GET | `/trades/{id}` | Yes | No | One trade in full: entry, exit, fees, AI verdict, risk decision. | Planned |
-| GET | `/orders` | Yes | No | Lists orders and their status. | Planned |
+| GET | `/orders` | Yes | No | The order diary: every order asked for, refused ones included, newest first (`limit`, `offset`). | **Built** |
 | GET | `/positions` | Yes | No | Lists open positions. | Planned |
 | GET | `/signals` | Yes | No | Lists setups the strategy found and what was decided about each. | Planned |
 | GET | `/performance/summary` | Yes | No | Expectancy per trade, win rate, drawdown, and the comparison with the two baselines. | Planned |
 | GET | `/performance/daily` | Yes | No | Profit or loss per day. | Planned |
 | GET | `/reconciliation/latest` | Yes | No | The latest comparison between our records and the exchange. | Planned |
+
+### `GET /orders`
+
+`?limit=` (1 to 200, default 50) and `?offset=` (default 0). Newest first. One row per order, never changed afterwards. A refused order is written down too.
+
+```json
+{
+  "limit": 50,
+  "offset": 0,
+  "orders": [
+    {
+      "id": "7fb488db-e08f-490a-972b-6e75d89d3b32",
+      "client_order_id": "my-ticket-2",
+      "mode": "shadow",
+      "symbol": "BTCUSDT",
+      "side": "BUY",
+      "requested_quantity": null,
+      "requested_amount": null,
+      "status": "rejected",
+      "risk_outcome": "rejected",
+      "risk_code": "trading_paused",
+      "risk_reason": "Trading is paused: going on holiday.",
+      "quantity": null,
+      "price": null,
+      "fill_id": null,
+      "created_at": "2026-11-28T03:44:32Z"
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `client_order_id` | The order's ticket number. Unique: the database refuses a second order with the same one. |
+| `mode` | `shadow`, `testnet` or `live`: where the order was headed. |
+| `requested_quantity` / `requested_amount` | What was asked for: coins, or USDT to spend. Both `null`: "as much as allowed" for a buy, "everything" for a sale. |
+| `status` | `"filled"` or `"rejected"`. |
+| `risk_outcome` / `risk_code` / `risk_reason` | What the risk engine said, and why. |
+| `quantity` / `price` | What was traded; `null` when nothing was. |
+| `fill_id` | The fill in `GET /trading/fills`; `null` when nothing was traded. |
 
 ## AI
 

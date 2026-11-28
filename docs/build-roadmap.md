@@ -325,6 +325,82 @@ By pair: BTCUSDT 25 trades, +28.96 USDT; ETHUSDT 24 trades, +17.56 USDT; BNBUSDT
 
 By the rule above, this idea is not built and not traded, and it is not retuned on these years. The hidden period has now been used for 1 of at most 3 ideas.
 
+#### Stage 7c: the trend rule on ten coins, and its rules fixed before any data is opened (owner decision 2026-11-27)
+
+The owner's next idea: the same trend rule, on ten coins instead of three. Everything below is written and committed **before** the seven new coins are named and before any of their prices is downloaded. Nothing in it may be changed afterwards. The number ten is final. This is idea 2 of at most 3 on the hidden period. Nothing in the live bot changes: this is a replay of past prices only.
+
+Said plainly: the rule already failed on three coins in these same years. Trying it on more coins is a second look at the same years, which the "three ideas" budget allows and counts. That is why the verdict below must also hold on the seven coins nobody has opened.
+
+**What is already fixed and cannot be chosen any more.** One rule only, the one chosen in stage 7b: buy at the next day's open after a close above the highest close of the previous 20 days; sell at the next day's open after a close below the lowest close of the previous 20 days. There is no choosing period and nothing to tune.
+
+**The period.** 1 November 2022 to 31 October 2026 (the hidden period of stage 7b). October 2022 is used only as the 20 earlier days.
+
+**The ten coins.** BTCUSDT, ETHUSDT, BNBUSDT, plus seven more, picked by size at the start of the period and not from today's list:
+
+1. Source: CoinMarketCap's historical snapshot dated **30 October 2022** (the last weekly snapshot before the period), in its order of market value, largest first. If the page cannot be read by Claude Code, the owner opens it in his browser and reads the names in order; no other source is used without the owner's word.
+2. Going down that list, a coin is skipped when: it is BTC, ETH or BNB; it is a stablecoin (its price is tied to a currency, such as USDT, USDC, BUSD, DAI); it is a wrapped or staked copy of another coin (such as WBTC or stETH); or Binance's archive has no daily candle for its `<COIN>USDT` pair on every day of October 2022.
+3. The first seven coins that are not skipped are the seven. Their order in the snapshot is their rank; BTC, ETH and BNB rank above them, in that order.
+4. Nothing about what happened to a coin after 30 October 2022 may be used. A coin that later crashed or was removed from Binance stays in the ten.
+5. The seven names, and every coin skipped with its reason, are written here and committed **before** any candle of theirs is downloaded.
+
+**The seven, found on 2026-11-27 after the rules above were committed (commit `4f16d79`), and before any candle of the test period was downloaded.** Read from `coinmarketcap.com/historical/20221030/` ("Historical Snapshot - 30 October 2022"); the first 20 rows were enough.
+
+| Rank on the list | Coin | Decision |
+|---|---|---|
+| 1 | Bitcoin (BTC) | skipped: already one of the ten |
+| 2 | Ethereum (ETH) | skipped: already one of the ten |
+| 3 | Tether (USDT) | skipped: stablecoin |
+| 4 | BNB | skipped: already one of the ten |
+| 5 | USD Coin (USDC) | skipped: stablecoin |
+| 6 | XRP | **taken (1)** |
+| 7 | Binance USD (BUSD) | skipped: stablecoin |
+| 8 | Dogecoin (DOGE) | **taken (2)** |
+| 9 | Cardano (ADA) | **taken (3)** |
+| 10 | Solana (SOL) | **taken (4)** |
+| 11 | Polygon (MATIC) | **taken (5)** |
+| 12 | Polkadot (DOT) | **taken (6)** |
+| 13 | Shiba Inu (SHIB) | **taken (7)** |
+
+Not needed, because seven were found: Dai (14), TRON (15) and everything below.
+
+The ten, in rank order: BTCUSDT, ETHUSDT, BNBUSDT, XRPUSDT, DOGEUSDT, ADAUSDT, SOLUSDT, MATICUSDT, DOTUSDT, SHIBUSDT.
+
+How "a candle on every day of October 2022" was checked without looking at a price: for each of the seven, Binance's monthly file for October 2022 was downloaded, its checksum verified, the number of different days in it counted (31 for each), and the file deleted. Only the count was displayed. October 2022 is before the test period.
+
+**The rules of the replay.** As in stage 7b (daily candles, UTC days, long only, a signal at the close of day D becomes an order at the open of day D+1, no peeking), with these additions:
+
+- *Size and limits, the same as the live bot's today:* 24 USDT per trade, one trade per coin, and **at most 3 trades open at once** (`max_open_positions`). The bot starts with 72 USDT. Profits are not re-invested.
+- *When there are more buy signals than free places:* sales of that morning happen first and free their places; then the buy signals are served in rank order, largest coin first. A signal that finds no free place is dropped; the coin needs a new signal on a later day.
+- *Costs on every order, for the bot and for buy-and-hold alike:* the 0.1% fee, the 0.05% worse fill, **and half of that coin's measured spread** (below). Also reported at the 0.075% fee and with double the spread; neither decides anything.
+- *A coin removed from Binance during the period:* on the last day it has a candle, an open trade and buy-and-hold's holding of it are sold at that day's close, with the costs. It gives no signal afterwards.
+- *A missing day inside a coin's data:* a signal needs every one of its 20 earlier days; the money count uses the last close seen.
+- Not modelled: the daily-loss pause, and Claude.
+
+**Each coin's real spread.** Binance's public archive for spot holds candles and trades only, no past order books (checked 2026-11-27: the folders are `klines`, `trades`, `aggTrades`). So a coin's spread on a past day cannot be known. What is used instead: the spread measured **now**, from Binance's public best bid and ask, once a minute for 7 full days, for each of the ten pairs. A coin's spread is the average over those samples of (ask − bid) ÷ the middle price. The ten numbers are written here and committed before any candle of the seven is downloaded. Weakness, stated before the result: today's spread is not the spread of 2023; it may have been wider then.
+
+**Buy-and-hold, the thing to beat: the same ten coins, the same money, the same dates, the same costs.** On 1 November 2022, 7.20 USDT of each of the ten coins (72 USDT in all) is bought at that day's opening price; on 31 October 2026 it is sold at that day's close (a removed coin as above). Worst drop is measured for both as in stage 7b, each starting with 72 USDT.
+
+**The second, unseen-only run.** The same replay with the seven new coins only: 72 USDT, at most 3 trades open, rank order among the seven; buy-and-hold with 72 USDT split equally over the seven.
+
+**The procedure.** The run happens **once**. Its full output is written to `docs/trend-ten-result.txt` and committed; the run refuses to start when that file exists. The candles of the seven coins are downloaded by the run itself and are not looked at before it.
+
+**The pass mark, at the 0.1% fee. All five must hold.**
+
+- (a) At least 20 trades, in the ten-coin run and in the seven-coin run.
+- (b) The bot's total profit is above zero in the ten-coin run.
+- (c) In the ten-coin run, one of these two (the same wording as stage 7b, not loosened): the bot's profit is at least buy-and-hold's profit; or the bot's profit is at least 50% of buy-and-hold's profit **and** the bot's worst drop is at most 50% of buy-and-hold's worst drop.
+- (d) In the ten-coin run, the bot's total profit with its single best trade taken away is still above zero.
+- (e) Condition (c) also holds in the seven-coin run, against buy-and-hold of the same seven.
+
+**What is unseen, and what is not.**
+
+- *Already opened:* BTCUSDT, ETHUSDT and BNBUSDT in this period, and this rule's result on them (bot +62.53 USDT, buy-and-hold +104.62 USDT). That known part is against the bot, so it cannot flatter the result.
+- *Unseen:* every candle of the seven new coins. They are chosen by a rule that does not look at them, with nothing left to tune, and condition (e) makes them carry the verdict alone.
+- *A limit that cannot be removed:* Claude Code and the owner both know roughly how the crypto market moved in these years. That is why the coins are picked by a fixed list and not by judgement.
+- *Truly unseen for everyone:* the future. A pass here must still run on paper for months before any real money.
+
+**After the result.** A fail means this idea is not built and not traded, and it is not retuned. A pass means it is built on plain rules and must then prove itself on paper, as above. Either way the hidden period has then been used for 2 of at most 3 ideas.
+
 ### Stage 8: Order path and the kill switch
 
 - **Goal:** one path for every order (signal → risk engine → router → fill → record) and a stop button that works from the phone.
@@ -338,6 +414,17 @@ By the rule above, this idea is not built and not traded, and it is not retuned 
   - One function that picks the order key: none in shadow, the testnet key in testnet, the trade key only in live. The router never picks from the list of configured keys itself.
   - Compare the fee Binance charged on each fill with the configured fee.
 - **Gate:** the owner sends a test order from Postman in paper mode and follows it into pgAdmin; an oversized test order comes out shrunk; kill, restart, still paused, resume. `/kill` from Telegram is proven here if the development bot exists, otherwise at stage 12.
+- **Split by the owner on 2026-11-27 into two parts:**
+  - **Part A (built 2026-11-27, on `feature/order-path`):** the stop button (`POST /trading/kill`, `/trading/resume`, saved in the same step, restored at startup), `GET /trading/status`, the order diary (`orders` table, migration 0004, `GET /orders`), ticket numbers (`client_order_id`, unique in the database), the router (`trading/router.py`: only `shadow` has a road), and the money checks from the stage 7 reviews. With the owner's three additions, each proven by a test: resume does not clear the daily-loss pause; a sale can only close or shrink a position; the ticket is unique in the database.
+  - **Part B (NOT built; waits until a strategy passes its test, owner's decision 2026-11-27):** signed orders to Binance testnet, with everything in the stage 4 carry-over list above, and cancelling waiting orders on kill.
+  - **Part A approved by the owner on 2026-11-27 (commit `4f16d79`):** with the app started by himself (shown by `app_started_at`), he saw in Postman: the same ticket buying once; kill; a buy refused while stopped; a sale working while stopped; a sale of "1" BTC selling only the 0.00039 held; the stop still on after a restart; resume; and the diary listing all of it. This is not the stage 8 gate: part B is not built.
+  - **`/kill` from Telegram:** not built in part A (it needs a listener for incoming Telegram messages); proven at stage 12, or earlier with the Telegram chat of stage 10.
+- **Left open by the reviews of part A (must be handled where named):**
+  - Before live: the stop button needs the database twice (the login check and the save). With the database down, kill answers 503 and pauses nothing. Harmless while every order also needs the database; before any path can trade without it, kill must pause in memory on a valid token alone, or the owner needs a second stop path. Also consider an alert on every kill and resume, and asking for the password again on resume.
+  - With the strategy loop: it must always send its own ticket number (an order without one is not retry-safe).
+  - Part B: the order is engine first, then router (today a `mode_not_built` order is written to the diary without the engine seeing it, which is fine while nothing is sent); `orders.fill_id` points at `paper_fills`, so testnet and live fills need a new migration.
+  - An unreadable saved risk state pauses trading, and resume then starts from a clean state: a daily pause that was in the unreadable row is lost. Rare; consider a third lock that resume cannot open.
+  - Read-only routes (`/trading/status`, `/orders`, `/trading/risk`) wait behind an order in progress and may write (they create the wallet, save the risk state).
 
 ### Stage 9: AI judge and its budget
 

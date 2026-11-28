@@ -106,6 +106,9 @@ class PaperRepository:
         await self._session.flush()
         return fill
 
+    async def fill_by_id(self, fill_id: uuid.UUID) -> PaperFill | None:
+        return await self._session.get(PaperFill, fill_id)
+
     async def fills(self, limit: int, offset: int = 0) -> list[PaperFill]:
         """The newest fills first."""
         query = (

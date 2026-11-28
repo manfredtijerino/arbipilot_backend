@@ -5,4 +5,5 @@ The trading logic: loop, strategy, risk engine, order router, shadow fills, reco
 - `risk.py`: the risk engine. Limits come from `decisions.yaml`.
 - `account.py`: what the account holds at one moment, as the engine sees it.
 - `fees.py`: fee maths. The rate comes from `fees` in `decisions.yaml`.
+- `router.py`: where an approved order is sent. Only `shadow` has a road (the paper account); `testnet` and `live` are refused until they are built.
 - `paper.py`: pretend fills for at-once orders (buy at the ask, sell at the bid), plain arithmetic.

@@ -31,7 +31,10 @@ Money = Numeric(28, 8)
 
 class PaperAccount(Base):
     __tablename__ = "paper_account"
-    __table_args__ = (CheckConstraint("id = 1", name="single_row"),)
+    __table_args__ = (
+        CheckConstraint("id = 1", name="single_row"),
+        CheckConstraint("cash >= 0", name="cash_not_negative"),
+    )
 
     id: Mapped[int] = mapped_column(
         SmallInteger, primary_key=True, autoincrement=False, default=1
@@ -66,11 +69,12 @@ class PaperFill(Base):
         CheckConstraint("side in ('BUY', 'SELL')", name="side_known"),
         CheckConstraint("quantity > 0 and price > 0", name="amounts_positive"),
         CheckConstraint("fee >= 0", name="fee_not_negative"),
+        CheckConstraint("notional >= 0", name="notional_not_negative"),
+        CheckConstraint("cash_after >= 0", name="cash_after_not_negative"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    # One per order. Paper orders make their own; from the order router on,
-    # the caller supplies it so a retry can never create a second order.
+    # The ticket number of the order this fill belongs to (see `orders`).
     client_order_id: Mapped[str] = mapped_column(String(36), unique=True)
     symbol: Mapped[str] = mapped_column(String(20), index=True)
     side: Mapped[str] = mapped_column(String(4))
@@ -89,7 +93,10 @@ class PaperFill(Base):
 
 class RiskStateRow(Base):
     __tablename__ = "risk_state"
-    __table_args__ = (CheckConstraint("id = 1", name="single_row"),)
+    __table_args__ = (
+        CheckConstraint("id = 1", name="single_row"),
+        CheckConstraint("day_start_equity >= 0", name="equity_not_negative"),
+    )
 
     id: Mapped[int] = mapped_column(
         SmallInteger, primary_key=True, autoincrement=False, default=1

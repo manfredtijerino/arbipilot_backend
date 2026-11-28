@@ -2697,6 +2697,249 @@
       "description": "The risk limits and, later, the trading controls. Log in first. No request here can change a limit: limits change only in decisions.yaml, by the owner's decision.",
       "item": [
         {
+          "name": "Status - running or paused",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('It says running or paused', function () {",
+                  "    pm.expect(pm.response.json().state).to.be.oneOf(['running', 'paused']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/trading/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trading",
+                "status"
+              ]
+            },
+            "description": "Is the bot allowed to open trades right now, and if not, why."
+          },
+          "response": [
+            {
+              "name": "200 - running",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/trading/status",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "trading",
+                    "status"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"environment\": \"development\",\n  \"trading_mode\": \"shadow\",\n  \"app_started_at\": \"2026-11-28T03:44:20.512345Z\",\n  \"state\": \"running\",\n  \"pause_reason\": \"\",\n  \"kill_switch\": false,\n  \"kill_reason\": \"\",\n  \"daily_loss_pause\": false,\n  \"equity\": \"299.94819916\",\n  \"prices_stale\": false,\n  \"open_positions\": 0,\n  \"day\": \"2026-11-28\",\n  \"day_profit_or_loss\": \"0.00000000\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Kill - the stop button",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Trading is stopped', function () {",
+                  "    pm.expect(pm.response.json().kill_switch).to.eql(true);",
+                  "    pm.expect(pm.response.json().state).to.eql('paused');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/trading/kill",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trading",
+                "kill"
+              ]
+            },
+            "description": "No new trade is opened until Resume. Closing a trade stays allowed. The stop survives a restart. The reason is optional.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"going on holiday\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 - stopped",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/trading/kill",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "trading",
+                    "kill"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"going on holiday\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"environment\": \"development\",\n  \"trading_mode\": \"shadow\",\n  \"app_started_at\": \"2026-11-28T03:44:20.512345Z\",\n  \"state\": \"paused\",\n  \"pause_reason\": \"Trading is paused: going on holiday.\",\n  \"kill_switch\": true,\n  \"kill_reason\": \"going on holiday\",\n  \"daily_loss_pause\": false,\n  \"equity\": \"299.94819916\",\n  \"prices_stale\": false,\n  \"open_positions\": 0,\n  \"day\": \"2026-11-28\",\n  \"day_profit_or_loss\": \"0.00000000\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Resume - release the stop button",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('The stop button is released', function () {",
+                  "    pm.expect(pm.response.json().kill_switch).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/trading/resume",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trading",
+                "resume"
+              ]
+            },
+            "description": "Releases the stop button. It does not undo the daily loss pause."
+          },
+          "response": [
+            {
+              "name": "200 - running",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/trading/resume",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "trading",
+                    "resume"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"environment\": \"development\",\n  \"trading_mode\": \"shadow\",\n  \"app_started_at\": \"2026-11-28T03:44:20.512345Z\",\n  \"state\": \"running\",\n  \"pause_reason\": \"\",\n  \"kill_switch\": false,\n  \"kill_reason\": \"\",\n  \"daily_loss_pause\": false,\n  \"equity\": \"299.94819916\",\n  \"prices_stale\": false,\n  \"open_positions\": 0,\n  \"day\": \"2026-11-28\",\n  \"day_profit_or_loss\": \"0.00000000\"\n}"
+            }
+          ]
+        },
+        {
           "name": "Risk - my limits and how much is used",
           "event": [
             {
@@ -3033,7 +3276,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"outcome\": \"reduced\",\n  \"code\": \"position_cap\",\n  \"reason\": \"Cut to 8% of the account.\",\n  \"fill\": {\n    \"id\": \"0d0c4a53-5f0e-4b43-9a55-0c0f6a1f7a11\",\n    \"client_order_id\": \"6a3f0a0e-7f0f-4a61-8a0b-2f4f6e5d1c22\",\n    \"symbol\": \"BTCUSDT\",\n    \"side\": \"BUY\",\n    \"quantity\": \"0.00040000\",\n    \"price\": \"59896.01000000\",\n    \"notional\": \"23.95840400\",\n    \"fee\": \"0.02395841\",\n    \"realized_pnl\": null,\n    \"cash_after\": \"276.01763759\",\n    \"risk_outcome\": \"reduced\",\n    \"risk_code\": \"position_cap\",\n    \"created_at\": \"2026-11-27T10:00:00Z\"\n  }\n}"
+              "body": "{\n  \"outcome\": \"reduced\",\n  \"code\": \"position_cap\",\n  \"reason\": \"Cut to 8% of the account.\",\n  \"fill\": {\n    \"id\": \"0d0c4a53-5f0e-4b43-9a55-0c0f6a1f7a11\",\n    \"client_order_id\": \"6a3f0a0e-7f0f-4a61-8a0b-2f4f6e5d1c22\",\n    \"symbol\": \"BTCUSDT\",\n    \"side\": \"BUY\",\n    \"quantity\": \"0.00040000\",\n    \"price\": \"59896.01000000\",\n    \"notional\": \"23.95840400\",\n    \"fee\": \"0.02395841\",\n    \"realized_pnl\": null,\n    \"cash_after\": \"276.01763759\",\n    \"risk_outcome\": \"reduced\",\n    \"risk_code\": \"position_cap\",\n    \"created_at\": \"2026-11-27T10:00:00Z\"\n  },\n  \"client_order_id\": \"6a3f0a0e-7f0f-4a61-8a0b-2f4f6e5d1c22\",\n  \"repeated\": false\n}"
             }
           ]
         },
@@ -3131,7 +3374,201 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"outcome\": \"rejected\",\n  \"code\": \"nothing_to_sell\",\n  \"reason\": \"Nothing of this pair is held.\",\n  \"fill\": null\n}"
+              "body": "{\n  \"outcome\": \"rejected\",\n  \"code\": \"nothing_to_sell\",\n  \"reason\": \"Nothing of this pair is held.\",\n  \"fill\": null,\n  \"client_order_id\": \"6a3f0a0e-7f0f-4a61-8a0b-2f4f6e5d1c22\",\n  \"repeated\": false\n}"
+            }
+          ]
+        },
+        {
+          "name": "Test order - pretend BUY with a ticket (send it twice)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('The ticket comes back', function () {",
+                  "    pm.expect(pm.response.json().client_order_id).to.eql('my-ticket-1');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/trading/orders/test",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trading",
+                "orders",
+                "test"
+              ]
+            },
+            "description": "The same ticket number sent twice buys once: the second answer has repeated = true and the same fill. Change the ticket to place a new order.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"symbol\": \"BTCUSDT\",\n  \"side\": \"BUY\",\n  \"client_order_id\": \"my-ticket-1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [
+            {
+              "name": "200 - the second time: repeated",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/trading/orders/test",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "trading",
+                    "orders",
+                    "test"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"symbol\": \"BTCUSDT\",\n  \"side\": \"BUY\",\n  \"client_order_id\": \"my-ticket-1\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"outcome\": \"reduced\",\n  \"code\": \"position_cap\",\n  \"reason\": \"Cut to 8% of the account.\",\n  \"fill\": null,\n  \"client_order_id\": \"my-ticket-1\",\n  \"repeated\": true\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Data",
+      "item": [
+        {
+          "name": "Orders - the order diary",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Answered 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('It is a list', function () {",
+                  "    pm.expect(pm.response.json().orders).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/orders?limit=10&offset=0",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "orders"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Every order that was asked for, refused ones included, newest first. limit is 1 to 200."
+          },
+          "response": [
+            {
+              "name": "200 - one refused order",
+              "originalRequest": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{base_url}}/orders?limit=10&offset=0",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "orders"
+                  ],
+                  "query": [
+                    {
+                      "key": "limit",
+                      "value": "10"
+                    },
+                    {
+                      "key": "offset",
+                      "value": "0"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"limit\": 50,\n  \"offset\": 0,\n  \"orders\": [\n    {\n      \"id\": \"7fb488db-e08f-490a-972b-6e75d89d3b32\",\n      \"client_order_id\": \"my-ticket-2\",\n      \"mode\": \"shadow\",\n      \"symbol\": \"BTCUSDT\",\n      \"side\": \"BUY\",\n      \"requested_quantity\": null,\n      \"requested_amount\": null,\n      \"status\": \"rejected\",\n      \"risk_outcome\": \"rejected\",\n      \"risk_code\": \"trading_paused\",\n      \"risk_reason\": \"Trading is paused: going on holiday.\",\n      \"quantity\": null,\n      \"price\": null,\n      \"fill_id\": null,\n      \"created_at\": \"2026-11-28T03:44:32Z\"\n    }\n  ]\n}"
             }
           ]
         }
