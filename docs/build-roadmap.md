@@ -378,6 +378,13 @@ How "a candle on every day of October 2022" was checked without looking at a pri
 
 **Each coin's real spread.** Binance's public archive for spot holds candles and trades only, no past order books (checked 2026-11-27: the folders are `klines`, `trades`, `aggTrades`). So a coin's spread on a past day cannot be known. What is used instead: the spread measured **now**, from Binance's public best bid and ask, once a minute for 7 full days, for each of the ten pairs. A coin's spread is the average over those samples of (ask − bid) ÷ the middle price. The ten numbers are written here and committed before any candle of the seven is downloaded. Weakness, stated before the result: today's spread is not the spread of 2023; it may have been wider then.
 
+**How the spread is measured: details fixed on 2026-11-27, before the first sample (added after the rules above; they fill gaps and change nothing already written).**
+
+- *Where and how:* a small script, `scripts/spread_measure.py`, on the server (it runs day and night; the laptop sleeps). Once a minute it asks Binance's public `GET /api/v3/ticker/bookTicker` for the ten pairs, with `symbolStatus=TRADING`, and writes down each pair's best bid and best ask. No key, no database.
+- *What counts:* a sample counts when the pair was trading and has a bid above zero and an ask not below the bid. One sample's spread is (ask − bid) ÷ ((ask + bid) ÷ 2).
+- *Holes:* the measuring lasts 7 days (10,080 minutes) from its start. A coin's spread is the average of the samples that were actually collected in that time. The number of samples of each coin is written here with the result. Minutes lost to a restart or a network problem are not made up.
+- *A pair that does not trade on Binance any more* (no sample at all): it gets the **largest** average spread measured among the other pairs. This is the cautious choice: it can only make the bot's costs higher. Known before the first sample, from Binance's own pair list on 2026-11-27: MATICUSDT is not trading (status `BREAK`); the other nine are. Nothing else about any coin was looked at.
+
 **Buy-and-hold, the thing to beat: the same ten coins, the same money, the same dates, the same costs.** On 1 November 2022, 7.20 USDT of each of the ten coins (72 USDT in all) is bought at that day's opening price; on 31 October 2026 it is sold at that day's close (a removed coin as above). Worst drop is measured for both as in stage 7b, each starting with 72 USDT.
 
 **The second, unseen-only run.** The same replay with the seven new coins only: 72 USDT, at most 3 trades open, rank order among the seven; buy-and-hold with 72 USDT split equally over the seven.
