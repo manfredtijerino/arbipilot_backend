@@ -13,6 +13,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from database.models import (
+    Order,
     PaperAccount,
     PaperFill,
     PaperPosition,
@@ -224,6 +225,9 @@ class MemoryPaper:
         self.filled.append(fill)
         return fill
 
+    async def fill_by_id(self, fill_id: uuid.UUID) -> PaperFill | None:
+        return next((f for f in self.filled if f.id == fill_id), None)
+
     async def fills(self, limit: int, offset: int = 0) -> list[PaperFill]:
         newest_first = list(reversed(self.filled))
         return newest_first[offset : offset + limit]
@@ -249,12 +253,40 @@ class MemoryPaper:
         )
 
 
+class MemoryOrders:
+    """The order diary, kept in a list."""
+
+    MONEY = ("requested_quantity", "requested_amount", "quantity", "price")
+
+    def __init__(self) -> None:
+        self.rows: list[Order] = []
+
+    async def get_by_client_order_id(self, client_order_id: str) -> Order | None:
+        return next(
+            (o for o in self.rows if o.client_order_id == client_order_id), None
+        )
+
+    async def add(self, *, now: datetime, **fields: object) -> Order:
+        if await self.get_by_client_order_id(fields["client_order_id"]) is not None:
+            raise DuplicateRow("orders.client_order_id")
+        for name in self.MONEY:
+            fields[name] = _money(fields[name])
+        order = Order(id=uuid.uuid4(), created_at=now, **fields)
+        self.rows.append(order)
+        return order
+
+    async def newest(self, limit: int, offset: int = 0) -> list[Order]:
+        newest_first = list(reversed(self.rows))
+        return newest_first[offset : offset + limit]
+
+
 class MemoryStore:
     def __init__(self) -> None:
         self.users = MemoryUsers()
         self.tokens = MemoryTokens()
         self.codes = MemoryCodes()
         self.paper = MemoryPaper()
+        self.orders = MemoryOrders()
         self.commits = 0
 
     async def commit(self) -> None:

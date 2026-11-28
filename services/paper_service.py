@@ -13,6 +13,7 @@ database), so two orders can never spend the same cash.
 
 import asyncio
 import logging
+import unicodedata
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -22,8 +23,9 @@ from decimal import ROUND_DOWN, Decimal
 from typing import Any
 
 from config.decisions import Decisions
+from database.repositories.errors import DuplicateRow
 from services.market_service import MarketData
-from trading import paper
+from trading import paper, router
 from trading.account import AccountSnapshot, Position
 from trading.risk import (
     Decision,
@@ -42,6 +44,9 @@ ZERO = Decimal(0)
 CENT8 = Decimal("0.00000001")  # money is kept with 8 decimals
 # One piece of work may take this long before it gives up and frees the lock.
 WORK_TIMEOUT_SECONDS = 30
+DEFAULT_KILL_REASON = "stopped by the owner"
+LONGEST_KILL_REASON = 150
+LONGEST_REASON = 300  # the diary's column for the engine's sentence
 NOT_A_NUMBER = Decimal("NaN")  # "this value is not known": the engine refuses it
 SOURCE = "paper account"
 
@@ -73,6 +78,31 @@ class WalletView:
 class OrderResult:
     decision: Decision  # what the risk engine (or the paper broker) said
     fill: Any | None  # the saved `PaperFill`, or None when nothing was traded
+    order: Any  # the saved `Order`: the diary's row for this order
+    repeated: bool  # this ticket was seen before; nothing was done again
+
+
+@dataclass(frozen=True)
+class TradingStatus:
+    """Is the bot allowed to open trades right now, and if not, why."""
+
+    mode: str  # shadow, testnet or live
+    paused: bool  # no new trade is opened right now
+    pause_reason: str  # every reason, in the owner's words; "" when running
+    kill_switch: bool  # the stop button is pressed
+    kill_reason: str
+    daily_loss_pause: bool  # today's loss limit was reached
+    equity: Decimal | None  # None when a held pair has no known price
+    prices_stale: bool
+    open_positions: int
+    day: str
+    day_profit_or_loss: Decimal
+
+
+def _clean(text: str) -> str:
+    """Plain text on one line: no control or invisible formatting characters."""
+    kept = (" " if ch.isspace() else ch for ch in text)
+    return "".join(ch for ch in kept if unicodedata.category(ch)[0] != "C")
 
 
 def _refused(code: str, reason: str) -> Decision:
@@ -86,11 +116,14 @@ class PaperTrading:
         engine: RiskEngine,
         market: Callable[[], MarketData],
         open_store: OpenStore,
+        mode: str = "shadow",
     ) -> None:
         self._decisions = decisions
         self._engine = engine
         self._market = market
         self.open_store = open_store
+        self._mode = mode  # where the router sends approved orders
+        self._pending_kill: str | None = None  # a stop not yet written down
         self._lock = asyncio.Lock()
         self._restored = False  # the engine got its memory back
         self._saved_state: RiskState | None = None
@@ -131,21 +164,32 @@ class PaperTrading:
             self.open_store() as store,
         ):
             await self._load(store, now)
+            if self._pending_kill:
+                self._engine.pause(self._pending_kill)
             yield store
-            state = self._engine.state()
-            changed = state != self._saved_state
-            if changed:
-                await store.paper.save_risk_state(
-                    state.day,
-                    state.day_start_equity,
-                    state.daily_pause,
-                    state.outside_pause,
-                    now,
-                )
+            await self._save(store, now)
+
+    async def _save(self, store: Any, now: datetime) -> None:
+        """Write down what was done, with whatever the engine now remembers."""
+        state = self._engine.state()
+        changed = state != self._saved_state
+        if changed:
+            await store.paper.save_risk_state(
+                state.day,
+                state.day_start_equity,
+                state.daily_pause,
+                state.outside_pause,
+                now,
+            )
+        try:
             await store.commit()
-            # Only now is it written down: a failed commit leaves it to be redone.
-            if changed:
-                self._saved_state = state
+        except BaseException:
+            # Nobody knows whether the database kept it. Forget what was
+            # believed saved, so the next piece of work writes it again.
+            self._saved_state = None
+            raise
+        if changed:
+            self._saved_state = state
 
     async def _wallet(
         self, store: Any, now: datetime, lock: bool = False
@@ -225,7 +269,86 @@ class PaperTrading:
         async with self._work(now) as store:
             return await store.paper.fills(limit, offset)
 
-    # --- placing a pretend order ---
+    # --- the stop button ---
+
+    async def start(self, now: datetime) -> None:
+        """At startup: give the risk engine its memory back before anything
+        can ask it for a trade."""
+        async with self._work(now):
+            pass
+
+    async def status(self, now: datetime) -> TradingStatus:
+        async with self._work(now) as store:
+            return await self._status(store, now)
+
+    async def kill(self, reason: str, now: datetime) -> TradingStatus:
+        """Stop opening trades until `resume`. Closing trades stays allowed.
+
+        The stop is written to the database in the same step. If that fails
+        the stop still holds for this run, and it is written with the next
+        piece of work; the caller is told it was not saved.
+        """
+        reason = _clean(reason)[:LONGEST_KILL_REASON].strip() or DEFAULT_KILL_REASON
+        self._pending_kill = reason  # survives a failed load or a failed save
+        self._engine.pause(reason)
+        async with self._work(now) as store:
+            self._engine.pause(reason)  # again: the load may have restored
+            status = await self._status(store, now)
+            self._saved_state = None  # a stop is always written, never assumed
+            await self._save(store, now)
+            # Written down, and still under the lock: nothing is pending.
+            self._pending_kill = None
+        logger.warning("kill switch pressed: entries paused")
+        return status
+
+    async def resume(self, now: datetime) -> TradingStatus:
+        """Undo the stop button, and only that: a day paused by the daily
+        loss limit stays paused until the next UTC day."""
+        async with self._work(now) as store:
+            before = self._engine.state().outside_pause
+            self._engine.resume()
+            try:
+                status = await self._status(store, now)
+                await self._save(store, now)
+            except BaseException:
+                # Not saved: stay stopped, so memory never runs ahead of
+                # what a restart would find.
+                if before:
+                    self._engine.pause(before)
+                raise
+            # Saved, and still under the lock. A stop pressed while this
+            # resume was waiting came later: it stays, and wins.
+            if self._pending_kill == before:
+                self._pending_kill = None
+            elif self._pending_kill:
+                self._engine.pause(self._pending_kill)
+        logger.warning("kill switch released: entries resumed")
+        return status
+
+    async def _status(self, store: Any, now: datetime) -> TradingStatus:
+        wallet = await self._wallet(store, now)
+        report = self._engine.report(self._snapshot(wallet), now)
+        state = self._engine.state()
+        return TradingStatus(
+            mode=self._mode,
+            paused=report.entries_paused,
+            pause_reason=report.pause_reason,
+            kill_switch=bool(state.outside_pause),
+            kill_reason=state.outside_pause,
+            daily_loss_pause=state.daily_pause,
+            equity=wallet.equity,
+            prices_stale=wallet.prices_stale,
+            open_positions=report.open_positions,
+            day=report.day,
+            day_profit_or_loss=report.day_profit_or_loss,
+        )
+
+    # --- placing an order ---
+
+    async def orders(self, limit: int, offset: int, now: datetime) -> list[Any]:
+        """The order diary, newest first."""
+        async with self._work(now) as store:
+            return await store.orders.newest(limit, offset)
 
     async def place(
         self,
@@ -234,30 +357,110 @@ class PaperTrading:
         now: datetime,
         quantity: Decimal | None = None,
         amount_usdt: Decimal | None = None,
+        client_order_id: str | None = None,
     ) -> OrderResult:
-        """One at-once order. A buy without a size asks for as much as the
-        limits allow; a sale without a size sells everything held."""
+        """One at-once order, on the one road every order takes: asked for,
+        checked by the risk engine, routed, filled, written down.
+
+        A buy without a size asks for as much as the limits allow; a sale
+        without a size sells everything held. An order whose ticket number
+        (`client_order_id`) was seen before is not done again: what happened
+        the first time is returned.
+        """
+        ticket = client_order_id or str(uuid.uuid4())
+        try:
+            return await self._place(symbol, side, now, quantity, amount_usdt, ticket)
+        except DuplicateRow:
+            # Another copy of this order was written first. The database
+            # refused this one; nothing of it was kept. Show the first.
+            logger.warning("order repeated: ticket seen before symbol=%s", symbol)
+            async with self._work(now) as store:
+                seen = await store.orders.get_by_client_order_id(ticket)
+                if seen is None:
+                    raise
+                return await self._replay(store, seen, symbol, side)
+
+    async def _place(
+        self,
+        symbol: str,
+        side: Side,
+        now: datetime,
+        quantity: Decimal | None,
+        amount_usdt: Decimal | None,
+        ticket: str,
+    ) -> OrderResult:
         async with self._work(now) as store:
             wallet = await self._wallet(store, now, lock=True)
-            view = market_view(self._market(), symbol)
-            decision, fill = self._decide(
-                symbol, side, quantity, amount_usdt, wallet, view, now
-            )
+            # Looked up while holding the wallet's row: a second copy of the
+            # same order waits here until the first is written, then sees it.
+            seen = await store.orders.get_by_client_order_id(ticket)
+            if seen is not None:
+                return await self._replay(store, seen, symbol, side)
+            fill = None
+            if router.destination(self._mode) is not router.Destination.PAPER:
+                decision = _refused(
+                    "mode_not_built",
+                    f"Orders in {self._mode} mode are not built yet.",
+                )
+            else:
+                view = market_view(self._market(), symbol)
+                decision, fill = self._decide(
+                    symbol, side, quantity, amount_usdt, wallet, view, now
+                )
             row = None
             if fill is not None:
-                row = await self._record(store, symbol, decision, fill, now)
+                row = await self._record(store, symbol, decision, fill, ticket, now)
                 # The account changed: let the engine see the new value now.
                 after = await self._wallet(store, now)
                 self._engine.report(self._snapshot(after), now)
+            order = await store.orders.add(
+                client_order_id=ticket,
+                mode=self._mode,
+                symbol=symbol,
+                side=str(side),
+                requested_quantity=quantity,
+                requested_amount=amount_usdt,
+                status="filled" if row is not None else "rejected",
+                risk_outcome=decision.outcome,
+                risk_code=decision.code,
+                risk_reason=decision.reason[:LONGEST_REASON],
+                quantity=fill.quantity if fill is not None else None,
+                price=fill.price if fill is not None else None,
+                fill_id=row.id if row is not None else None,
+                now=now,
+            )
         logger.info(
-            "paper order symbol=%s side=%s outcome=%s code=%s filled=%s",
+            "order symbol=%s side=%s outcome=%s code=%s filled=%s",
             symbol,
             side,
             decision.outcome,
             decision.code,
             fill is not None,
         )
-        return OrderResult(decision, row)
+        return OrderResult(decision, row, order, repeated=False)
+
+    @staticmethod
+    async def _replay(store: Any, order: Any, symbol: str, side: Side) -> OrderResult:
+        """What happened to an order the first time it was asked for.
+
+        A ticket belongs to one order. Used again for a different pair or
+        side it is refused, so nobody mistakes an old answer for a new trade.
+        """
+        if (order.symbol, order.side) != (symbol, str(side)):
+            reason = "This ticket number was already used for a different order."
+            return OrderResult(_refused("ticket_reused", reason), None, order, True)
+        decision = Decision(
+            order.risk_outcome,
+            order.risk_code,
+            order.risk_reason,
+            order.quantity or ZERO,
+            order.price or ZERO,
+            (order.quantity or ZERO) * (order.price or ZERO),
+        )
+        fill = None
+        if order.fill_id is not None:
+            fill = await store.paper.fill_by_id(order.fill_id)
+        return OrderResult(decision, fill, order, repeated=True)
 
     def _decide(
         self,
@@ -337,13 +540,18 @@ class PaperTrading:
 
     @staticmethod
     async def _record(
-        store: Any, symbol: str, decision: Decision, fill: paper.Fill, now: datetime
+        store: Any,
+        symbol: str,
+        decision: Decision,
+        fill: paper.Fill,
+        ticket: str,
+        now: datetime,
     ) -> Any:
         await store.paper.set_cash(fill.cash_after, now)
         after = fill.holding_after
         await store.paper.save_position(symbol, after.quantity, after.cost, now)
         return await store.paper.add_fill(
-            client_order_id=str(uuid.uuid4()),
+            client_order_id=ticket,
             symbol=symbol,
             side=str(fill.side),
             quantity=fill.quantity,

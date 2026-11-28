@@ -81,6 +81,17 @@ class DatabaseUnavailable(ServiceError):
     message = "The database cannot be reached right now. Try again shortly."
 
 
+class PauseNotSaved(ServiceError):
+    """The stop button was pressed while the database could not be reached."""
+
+    status_code = 503
+    code = "pause_not_saved"
+    message = (
+        "Trading is paused now, but the pause could not be saved: a restart "
+        "would forget it. Press kill again in a moment."
+    )
+
+
 class UnknownSymbol(ServiceError):
     status_code = 404
     code = "unknown_symbol"

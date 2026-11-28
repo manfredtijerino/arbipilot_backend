@@ -3,6 +3,7 @@ session, saved together by `commit()`."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from database.repositories.order_repository import OrderRepository
 from database.repositories.paper_repository import PaperRepository
 from database.repositories.password_reset_code_repository import (
     PasswordResetCodeRepository,
@@ -18,6 +19,7 @@ class Store:
         self.tokens = RefreshTokenRepository(session)
         self.codes = PasswordResetCodeRepository(session)
         self.paper = PaperRepository(session)
+        self.orders = OrderRepository(session)
 
     async def commit(self) -> None:
         """Save everything done so far. Without it, nothing is kept."""
